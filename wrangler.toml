@@ -18,3 +18,6 @@ fallthrough = false
 [[migrations]]
 tag = "v1"                                       # Should be unique for each entry
 new_sqlite_classes = ["ChatRoom", "RateLimiter"]
+
+[vars]
+ADMIN_SECRET_KEY = "lxy130523" # <<< IMPORTANT: Replace with a strong, secret key
