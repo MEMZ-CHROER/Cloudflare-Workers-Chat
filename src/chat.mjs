@@ -98,152 +98,121 @@ export default {
   }
 }
 
-// 处理 API 请求
 /**
  * @param {string[]} path
  * @param {Request} request
  * @param {Env} env
  */
 async function handleApiRequest(path, request, env) {
-  const url = new URL(request.url);
-
-  switch (path[0]) {
-    case "room": {
-      // 处理 `/api/room/...` 请求
-      if (!path[1]) {
-        if (request.method == "POST") {
-          // POST 到 /api/room 创建私有房间
-          let id = env.rooms.newUniqueId();
-          return new Response(id.toString(), {headers: {"Access-Control-Allow-Origin": "*"}});
-        } else {
-          return new Response("方法不允许", {status: 405});
+  if (path[0] === "room") {
+    // 处理房间相关的 API 请求
+    if (path.length === 1) {
+      // 创建新的私人房间，返回 Durable Object ID
+      return handleNewPrivateRoom(request, env);
+    } else if (path.length === 2) {
+      if (path[1] === "websocket") {
+        // 处理 websocket 连接请求 (例如: /api/room/some-room/websocket)
+        // 这里的路径应该由 /api/room/<name>/websocket 处理
+        return new Response("Not Found", {status: 404});
+      } else if (path[1] === "clear" && request.method === "POST") {
+        // 清空房间聊天记录和速率限制 (例如: /api/room/some-room/clear)
+        let roomName = path[0]; // 这里应该是 path[1]
+        roomName = path[1]; // 修正
+        let id = env.rooms.idFromName(roomName);
+        let roomObject = env.rooms.get(id);
+        
+        let { secretKey } = await request.json(); // 假设 secretKey 通过 body 传递
+        if (secretKey !== env.ADMIN_SECRET_KEY) {
+          return new Response("Unauthorized", { status: 403 });
         }
+        
+        // 调用 Durable Object 的 /clear 内部方法
+        let response = await roomObject.fetch(new URL("https://fake-host/clear"), {
+          method: "POST",
+          headers: {
+            "X-Admin-Secret-Key": secretKey, // 传递 secretKey 给 DO
+          }
+        });
+        return response;
       }
-
-      // 处理特定房间的请求
-      let name = path[1];
-      let id;
-      if (name.match(/^[0-9a-f]{64}$/)) {
-        // 64位十六进制 ID
-        id = env.rooms.idFromString(name);
-      } else if (name.length <= 32) {
-        // 字符串房间名
-        id = env.rooms.idFromName(name);
-      } else {
-        return new Response("名称过长", {status: 404});
-      }
-
-      // 获取 Durable Object 存根
+    } else if (path.length === 3 && path[2] === "websocket") {
+      // 这是一个WebSocket请求，连接到某个 Durable Object 实例
+      // 路径: /api/room/<name>/websocket
+      let roomName = path[1];
+      let id = env.rooms.idFromName(roomName);
+      let roomObject = env.rooms.get(id);
+      return roomObject.fetch(request.url, request);
+    } else if (path.length === 4 && path[2] === "kick" && request.method === "POST") {
+      // 新增：处理踢人请求
+      // 路径: /api/room/<roomName>/kick/<memberName>
+      let roomName = path[1];
+      let memberName = path[3]; // 从路径中获取要踢出的成员名称
+      
+      let id = env.rooms.idFromName(roomName);
       let roomObject = env.rooms.get(id);
 
-      // 构造新的 URL 并转发请求
-      let newUrl = new URL(request.url);
-      newUrl.pathname = "/" + path.slice(2).join("/");
-
-      return roomObject.fetch(newUrl, request);
-    }
-
-    case "admin": {
-      // =======================================================
-      // 新增：处理 `/api/admin/...` 请求用于管理操作
-      // =======================================================
-      // 路由示例：
-      //   - 清空房间聊天记录：/api/admin/clear-room/<room_name_or_id>?key=<ADMIN_SECRET_KEY>
-      //   - 清空所有速率限制：/api/admin/clear-rate-limits?key=<ADMIN_SECRET_KEY>
-
-      const requestKey = url.searchParams.get("key"); // 从查询参数获取密钥
-
-      // ===========================================================================================
-      // VVVV 这是修改的部分 VVVV
-      // 为 ADMIN_SECRET_KEY 设置默认值，如果环境变量未设置则使用此值
-      // 请务必将 "del" 替换为你希望的默认密钥，这个密钥将用来清空聊天室的聊天记录和ip速率限制。建议在在cf中设置变量ADMIN_SECRET_KEY=替换
-      const actualAdminSecretKey = env.ADMIN_SECRET_KEY || "del"; 
-
-      // 验证密钥
-      // 现在只需要比较 requestKey 和 actualAdminSecretKey
-      if (requestKey !== actualAdminSecretKey) {
-        return new Response("未经授权。密钥不匹配或未设置。", { status: 401 });
+      // 获取 secretKey
+      let requestBody;
+      try {
+        requestBody = await request.json(); // 假设 secretKey 通过 body 传递
+      } catch (e) {
+        return new Response("Invalid JSON in request body", { status: 400 });
       }
-      // ^^^^ 这是修改的部分 ^^^^
-      // ===========================================================================================
+      let secretKey = requestBody.secretKey;
 
-      switch (path[1]) {
-        case "clear-room": {
-          // 允许 GET 请求清空房间聊天记录
-          const roomId = path[2]; // 获取房间名称或 ID
-
-          if (!roomId) {
-            return new Response("请提供要清空的房间名称或 ID。", { status: 400 });
-          }
-
-          let id;
-          if (roomId.match(/^[0-9a-f]{64}$/)) {
-              id = env.rooms.idFromString(roomId);
-          } else if (roomId.length <= 32) {
-              id = env.rooms.idFromName(roomId);
-          } else {
-              return new Response("房间名称/ID格式不正确或过长。", { status: 400 });
-          }
-
-          try {
-            let roomObject = env.rooms.get(id);
-            // 调用 Durable Object 上的清空方法
-            // 我们这里调用 /clear-messages 路径来触发清空操作
-            // 为了GET请求能清空，我们将 DO fetch 的方法校验也改为 GET
-            const clearResponse = await roomObject.fetch(new URL("https://dummy-url/clear-messages"));
-
-            if (clearResponse.ok) {
-              return new Response(`房间 '${roomId}' 的聊天记录已清空。`, { status: 200 });
-            } else {
-              const errorText = await clearResponse.text();
-              return new Response(`清空失败：${errorText}`, { status: clearResponse.status });
-            }
-          } catch (error) {
-            console.error("清空聊天记录时发生错误:", error);
-            return new Response(`清空聊天记录时发生内部错误: ${error.message}`, { status: 500 });
-          }
-        }
-
-        case "clear-rate-limits": {
-            // 允许 GET 请求清空所有速率限制
-            try {
-                // 我们现在实现的是清空特定 RateLimiter 的功能
-                const targetIp = url.searchParams.get("ip"); // 允许指定要清空的IP
-                if (!targetIp) {
-                  return new Response("请提供要清空速率限制的 IP 地址。", { status: 400 });
-                }
-
-                let limiterId = env.limiters.idFromName(targetIp);
-                let limiterObject = env.limiters.get(limiterId);
-
-                const clearResponse = await limiterObject.fetch(new URL("https://dummy-url/clear-limit"));
-                
-                if (clearResponse.ok) {
-                  return new Response(`IP '${targetIp}' 的速率限制已清空。`, { status: 200 });
-                } else {
-                  const errorText = await clearResponse.text();
-                  return new Response(`清空IP速率限制失败：${errorText}`, { status: clearResponse.status });
-                }
-            } catch (error) {
-                console.error("清空速率限制时发生错误:", error);
-                return new Response(`清空速率限制时发生内部错误: ${error.message}`, { status: 500 });
-            }
-        }
-
-        default:
-          return new Response("未找到管理操作。", { status: 404 });
+      if (!secretKey || secretKey !== env.ADMIN_SECRET_KEY) {
+        return new Response("Unauthorized", { status: 403 });
       }
-    }
 
-    default:
-      return new Response("未找到", {status: 404});
+      // 调用 Durable Object 的 kick 方法
+      let response = await roomObject.fetch(`https://fake-host/kick?memberName=${encodeURIComponent(memberName)}`, {
+        method: "POST", // 使用POST方法
+        headers: {
+          "X-Admin-Secret-Key": secretKey, // 将 secretKey 传递给 Durable Object 进行验证
+        }
+      });
+
+      return response;
+    }
+  } else if (path[0] === "user") {
+    // 处理用户相关的 API 请求 (例如: /api/user/rate-limit)
+    return handleRateLimit(request, env);
   }
+
+  return new Response("未找到", {status: 404});
+}
+
+/**
+ * @param {Request} request
+ * @param {Env} env
+ */
+async function handleNewPrivateRoom(request, env) {
+  let id = env.rooms.newUniqueId();
+  return new Response(id.toString(), {headers: {"Content-Type": "text/plain"}});
+}
+
+/**
+ * @param {Request} request
+ * @param {Env} env
+ */
+async function handleRateLimit(request, env) {
+  let ip = request.headers.get("CF-Connecting-IP");
+  let id = env.limiters.idFromName(ip);
+  let limiter = env.limiters.get(id);
+  return limiter.fetch(request.url, request);
 }
 
 // =======================================================================================
-// ChatRoom Durable Object 类
+// Durable Object 部分...
+//
+// 这部分代码定义了 Durable Object 类。该对象是单例的，每个 ID 只有一个实例。
+// Durable Object 的所有请求都被序列化处理。
 
-// ChatRoom 实现了一个协调单个聊天室的 Durable Object
+const SECOND = 1000;
+const MINUTE = 60 * SECOND;
+const HOUR = 60 * MINUTE;
+
+// `ChatRoom` Durable Object 代表一个单独的聊天室。
 export class ChatRoom {
   /**
    * @param {DurableObjectState} state
@@ -251,26 +220,29 @@ export class ChatRoom {
    */
   constructor(state, env) {
     this.state = state;
-    this.storage = state.storage;  // 提供对持久存储的访问
-    this.env = env;  // 环境绑定
-    this.sessions = new Map();  // 跟踪客户端 WebSocket 的元数据
+    this.env = env;
 
-    // 从休眠状态恢复时重新建立现有 WebSocket
-    this.state.getWebSockets().forEach((webSocket) => {
-      let meta = webSocket.deserializeAttachment();
-      let limiterId = this.env.limiters.idFromString(meta.limiterId);
-      let limiter = new RateLimiterClient(
-        () => this.env.limiters.get(limiterId),
-        err => webSocket.close(1011, err.stack));
+    // `sessions` 是当前连接到此 Durable Object 的所有 WebSocket 会话的列表。
+    // 我们存储一个带有用户名的 {webSocket, quit, name} 对象。
+    this.sessions = [];
 
-      let blockedMessages = [];
-      this.sessions.set(webSocket, { ...meta, limiter, blockedMessages });
+    // `blockedUsers` 存储被禁止发送消息的用户。
+    // 我们将用户名映射到一个到期时间。
+    this.blockedUsers = {};
+
+    this.state.blockConcurrencyWhile(async () => {
+      // 在 DO 启动时，如果存储中有会话信息，可以恢复，
+      // 但对于 WebSocket 连接，它们会在 DO 重启时断开，
+      // 所以这里不需要从存储中恢复活动会话。
+      // let storedSessions = await this.state.storage.get("sessions");
+      // if (storedSessions) {
+      //   this.sessions = storedSessions;
+      // }
     });
-
-    this.lastTimestamp = 0;  // 最后看到的消息时间戳
   }
 
-  // 处理发送到此对象的 HTTP 请求
+  // `fetch` 是 Durable Object 的主要入口点。
+  // 它处理来自 Worker 的所有传入 HTTP 请求。
   /**
    * @param {Request} request
    */
@@ -278,309 +250,243 @@ export class ChatRoom {
     return await handleErrors(request, async () => {
       let url = new URL(request.url);
 
-      switch (url.pathname) {
-        case "/websocket": {
-          // 处理 WebSocket 连接请求
-          if (request.headers.get("Upgrade") != "websocket") {
-            return new Response("需要 WebSocket", {status: 400});
-          }
+      if (url.pathname === "/websocket") {
+        // 创建一个新的 WebSocketPair。注意：这两个 WebSocket 连接
+        // 都可以在 Workers 的上下文中独立使用。
+        let pair = new WebSocketPair();
 
-          let ip = request.headers.get("CF-Connecting-IP");
-          let pair = new WebSocketPair();
-          await this.handleSession(pair[1], ip);
-          return new Response(null, { status: 101, webSocket: pair[0] });
-        }
-        // =======================================================
-        // 新增：处理来自 Worker 的清空消息请求（现在允许 GET）
-        // =======================================================
-        case "/clear-messages": {
-          // 不再检查 request.method，允许 GET 请求触发清空
-          await this.clearAllMessages();
-          return new Response("聊天记录已清空。", { status: 200 });
+        // 接受传入的连接，并将其传递给我们的 `webSocket` 处理程序。
+        await this.handleWebSocket(pair[1]);
+
+        // 返回配对的另一半，作为客户端的 HTTP 响应。
+        return new Response(null, { status: 101, webSocket: pair[0] });
+      } else if (url.pathname === "/clear" && request.method === "POST") {
+        // 新增：处理清空聊天记录的请求
+        const adminSecretKey = request.headers.get("X-Admin-Secret-Key");
+        if (adminSecretKey !== this.env.ADMIN_SECRET_KEY) {
+          return new Response("Unauthorized", { status: 403 });
         }
 
-        default:
-          return new Response("未找到", {status: 404});
+        await this.state.storage.deleteAll();
+        // 清空内存中的会话列表，这将导致所有连接断开并重新连接
+        // 从而强制客户端重新同步
+        this.sessions.forEach(session => {
+          try {
+            session.webSocket.close(1000, "管理员已清空聊天记录。");
+          } catch (e) { /* ignore */ }
+        });
+        this.sessions = []; // 清空活动会话
+        this.blockedUsers = {}; // 清空黑名单
+        this.broadcast({ info: "管理员已清空聊天记录并重置房间。" });
+        return new Response("Room cleared.", { status: 200 });
+      } else if (url.pathname === "/kick" && request.method === "POST") {
+        // 新增：处理踢人请求
+        const adminSecretKey = request.headers.get("X-Admin-Secret-Key");
+        if (adminSecretKey !== this.env.ADMIN_SECRET_KEY) {
+          return new Response("Unauthorized", { status: 403 });
+        }
+
+        const memberName = url.searchParams.get("memberName");
+        if (!memberName) {
+          return new Response("Missing memberName parameter.", { status: 400 });
+        }
+
+        const success = await this.kickMember(memberName);
+        if (success) {
+          return new Response(`Member "${memberName}" kicked.`, { status: 200 });
+        } else {
+          return new Response(`Member "${memberName}" not found or already disconnected.`, { status: 404 });
+        }
+
+      } else {
+        return new Response("未找到", { status: 404 });
       }
     });
   }
 
-  // =======================================================
-  // 新增：清空所有聊天记录的方法
-  // =======================================================
-  async clearAllMessages() {
-    // 调用 Durable Object 存储的 deleteAll() 方法来清空所有数据
-    await this.storage.deleteAll();
-    console.log(`Durable Object ID: ${this.state.id} - 所有聊天记录已清空。`);
-    // 清空内存中的会话列表（已连接的 WebSocket），虽然它们会在断开后消失
-    // 这里清空主要是为了逻辑清晰，实际会话需要客户端重新连接或发送消息来更新状态
-    this.sessions.clear(); 
-    this.lastTimestamp = 0; // 重置时间戳
-  }
-
-
-  // 实现基于 WebSocket 的聊天协议
   /**
    * @param {WebSocket} webSocket
+   */
+  async handleWebSocket(webSocket) {
+    webSocket.accept();
+
+    let session = { webSocket, quit: new Promise(resolve => webSocket.addEventListener("close", resolve)) };
+    this.sessions.push(session);
+
+    // 等待客户端发送其用户名。
+    let name = await new Promise(resolve => {
+      // 给客户端一个超时，如果他们不发送名称
+      let timeout = setTimeout(() => {
+        webSocket.close(1000, "未在规定时间内发送用户名");
+        resolve(null); // Resolve with null to indicate timeout/error
+      }, 5000); // 5秒超时
+      
+      webSocket.addEventListener("message", msg => {
+        try {
+          let data = JSON.parse(msg.data);
+          if (data.name) {
+            clearTimeout(timeout); // 清除超时
+            resolve(String(data.name).slice(0, 32));
+          } else {
+            webSocket.send(JSON.stringify({error: "需要发送 `name` 消息作为第一个消息。"}));
+          }
+        } catch (err) {
+          webSocket.send(JSON.stringify({error: "解析 JSON 失败: " + err}));
+        }
+      });
+    });
+
+    if (name === null) {
+      // 客户端未在规定时间内发送名称，会话已关闭
+      this.sessions = this.sessions.filter(s => s !== session);
+      return;
+    }
+
+    // 存储用户名。
+    session.name = name;
+
+    // 向所有连接广播新用户已加入的消息。
+    this.broadcast({ joined: name });
+
+    // 从存储中获取最近的 100 条消息并发送给新连接的用户。
+    let storage = await this.state.storage.list({limit: 100, reverse: true});
+    let messages = Array.from(storage.values()).reverse();
+    for (let msg of messages) {
+      webSocket.send(JSON.stringify(msg));
+    }
+
+    // 通过发送 "ready" 消息告诉客户端我们已发送所有历史消息。
+    session.webSocket.send(JSON.stringify({ready: true}));
+
+    // 等待此会话关闭。
+    await session.quit;
+
+    this.sessions = this.sessions.filter(s => s !== session);
+    this.broadcast({ quit: name });
+  }
+
+  // `broadcast()` 向所有连接的 WebSocket 会话发送消息。
+  /**
+   * @param {Object} message
+   */
+  broadcast(message) {
+    let cleanedSessions = [];
+    for (let session of this.sessions) {
+      try {
+        session.webSocket.send(JSON.stringify(message));
+        cleanedSessions.push(session);
+      } catch (err) {
+        // 忽略连接错误，移除坏掉的会话。
+        console.error("Error broadcasting to session:", err);
+      }
+    }
+    this.sessions = cleanedSessions;
+  }
+
+  // 新增：`kickMember` 方法，用于踢出指定成员
+  /**
+   * @param {string} memberName - 要踢出的成员的名称
+   * @returns {boolean} 如果成功踢出成员，则返回 true；否则返回 false。
+   */
+  async kickMember(memberName) {
+    let kicked = false;
+    const initialSessionCount = this.sessions.length;
+
+    this.sessions = this.sessions.filter(session => {
+      if (session.name === memberName) {
+        try {
+          session.webSocket.send(JSON.stringify({ error: "你已被管理员踢出聊天室。" }));
+          session.webSocket.close(1000, "你已被踢出");
+          kicked = true;
+          this.broadcast({ info: `管理员已将 ${memberName} 踢出聊天室。` });
+        } catch (err) {
+          console.error(`Error closing WebSocket for kicked member ${memberName}:`, err);
+        }
+        return false; // 从会话列表中移除
+      }
+      return true; // 保留其他会话
+    });
+
+    if (kicked) {
+      console.log(`Member ${memberName} kicked from room.`);
+    } else {
+      console.log(`Member ${memberName} not found in room or already disconnected.`);
+    }
+    return kicked;
+  }
+
+  /**
+   * @param {WebSocket} webSocket
+   * @param {any} message
+   */
+  async receive(webSocket, message) {
+    // 假设 `webSocket` 已经有一个 `name` 属性，这是在 `handleWebSocket` 中设置的
+    const session = this.sessions.find(s => s.webSocket === webSocket);
+    if (!session || !session.name) {
+      webSocket.send(JSON.stringify({error: "未知的会话或用户名。"}));
+      return;
+    }
+
+    if (message.message) {
+      // 检查是否在黑名单中
+      let expires = this.blockedUsers[session.name];
+      if (expires && expires > Date.now()) {
+        webSocket.send(JSON.stringify({error: "你已被禁止发送消息，请稍后再试。"}));
+        return;
+      }
+      // 收到消息，广播给所有连接。
+      let data = { name: session.name, message: String(message.message).slice(0, 256), timestamp: Date.now() };
+      this.broadcast(data);
+
+      // 将消息持久化到 Durable Object 的存储中。
+      // 使用 timestamp 作为键，确保消息的顺序和唯一性
+      await this.state.storage.put(String(data.timestamp), data);
+    }
+  }
+
+  /**
+   * 此方法未在当前 Worker 逻辑中使用，仅为示例
    * @param {string} ip
    */
-  async handleSession(webSocket, ip) {
-    this.state.acceptWebSocket(webSocket);
-
-    // 设置速率限制器
-    let limiterId = this.env.limiters.idFromName(ip);
-    let limiter = new RateLimiterClient(
-        () => this.env.limiters.get(limiterId),
-        err => webSocket.close(1011, err.stack));
-
-    // 创建会话并添加到会话映射
-    let session = { limiterId, limiter, blockedMessages: [] };
-    webSocket.serializeAttachment({ ...webSocket.deserializeAttachment(), limiterId: limiterId.toString() });
-    this.sessions.set(webSocket, session);
-
-    // 为所有在线用户排队"加入"消息
-    for (let otherSession of this.sessions.values()) {
-      if (otherSession.name) {
-        session.blockedMessages.push(JSON.stringify({joined: otherSession.name}));
-      }
-    }
-
-    // 加载最近的100条聊天记录
-    let storage = await this.storage.list({reverse: true, limit: 100});
-    let backlog = [...storage.values()];
-    backlog.reverse();
-    backlog.forEach(value => {
-      session.blockedMessages.push(value);
-    });
-  }
-
-  // 处理 WebSocket 消息
-  /**
-   * @param {WebSocket} webSocket
-   * @param {string} msg
-   */
-  async webSocketMessage(webSocket, msg) {
-    try {
-      let session = this.sessions.get(webSocket);
-      if (session.quit) {
-        webSocket.close(1011, "WebSocket 已损坏");
-        return;
-      }
-
-      // 检查速率限制
-      if (!session.limiter.checkLimit()) {
-        webSocket.send(JSON.stringify({
-          error: "您的IP受到速率限制，请稍后再试"
-        }));
-        return;
-      }
-
-      let data = JSON.parse(msg);
-
-      if (!session.name) {
-        // 第一条消息包含用户名
-        session.name = "" + (data.name || "匿名");
-        webSocket.serializeAttachment({ ...webSocket.deserializeAttachment(), name: session.name });
-
-        if (session.name.length > 32) {
-          webSocket.send(JSON.stringify({error: "名称过长"}));
-          webSocket.close(1009, "名称过长");
-          return;
-        }
-
-        // 发送所有排队消息
-        session.blockedMessages.forEach(queued => {
-          webSocket.send(queued);
-        });
-        delete session.blockedMessages;
-
-        // 广播用户加入消息
-        this.broadcast({joined: session.name});
-
-        webSocket.send(JSON.stringify({ready: true}));
-        return;
-      }
-
-      // 构造净化后的消息
-      data = { name: session.name, message: "" + data.message };
-
-      if (data.message.length > 256) {
-        webSocket.send(JSON.stringify({error: "消息过长"}));
-        return;
-      }
-
-      // 添加时间戳
-      data.timestamp = Math.max(Date.now(), this.lastTimestamp + 1);
-      this.lastTimestamp = data.timestamp;
-
-      // 广播消息
-      let dataStr = JSON.stringify(data);
-      this.broadcast(dataStr);
-
-      // 保存消息
-      let key = new Date(data.timestamp).toISOString();
-      await this.storage.put(key, dataStr);
-    } catch (err) {
-      webSocket.send(JSON.stringify({error: err.stack}));
-    }
-  }
-
-  // 处理 WebSocket 关闭和错误
-  async closeOrErrorHandler(webSocket) {
-    let session = this.sessions.get(webSocket) || {};
-    session.quit = true;
-    this.sessions.delete(webSocket);
-    if (session.name) {
-      this.broadcast({quit: session.name});
-    }
-  }
-
-  async webSocketClose(webSocket, code, reason, wasClean) {
-    this.closeOrErrorHandler(webSocket)
-  }
-
-  async webSocketError(webSocket, error) {
-    this.closeOrErrorHandler(webSocket)
-  }
-
-  // 广播消息给所有客户端
-  broadcast(message) {
-    if (typeof message !== "string") {
-      message = JSON.stringify(message);
-    }
-
-    let quitters = [];
-    this.sessions.forEach((session, webSocket) => {
-      if (session.name) {
-        try {
-          webSocket.send(message);
-        } catch (err) {
-          session.quit = true;
-          quitters.push(session);
-          this.sessions.delete(webSocket);
-        }
-      } else {
-        session.blockedMessages.push(message);
-      }
-    });
-
-    quitters.forEach(quitter => {
-      if (quitter.name) {
-        this.broadcast({quit: quitter.name});
-      }
-    });
+  async blockIp(ip) {
+    // 这是一个示例方法，您可以在此实现 IP 封禁逻辑
+    // 例如，将 IP 存储在 Durable Object 的存储中
+    // await this.state.storage.put(`blocked_ip_${ip}`, Date.now() + 24 * HOUR);
+    console.log(`IP ${ip} blocked.`);
   }
 }
 
-// =======================================================================================
-// RateLimiter Durable Object 类
-
-// RateLimiter 实现了一个跟踪消息频率并决定何时丢弃消息的 Durable Object
+// `RateLimiter` Durable Object 跟踪单个 IP 地址的请求速率。
 export class RateLimiter {
   /**
    * @param {DurableObjectState} state
-   * @param {Env} env
    */
-  constructor(state, env) {
-    this.state = state; // 需要 state 来访问 storage
-    this.storage = state.storage;
-    // 此IP下次允许发送消息的时间戳
-    this.nextAllowedTime = 0;
-    // 在构造函数中加载 nextAllowedTime
-    this.loadState();
+  constructor(state) {
+    this.state = state;
+    this.lastTimestamp = 0;
+    this.count = 0;
   }
 
-  async loadState() {
-    const storedTime = await this.storage.get("nextAllowedTime");
-    if (storedTime) {
-      this.nextAllowedTime = storedTime;
-    }
-  }
-
-  // 处理发送到此对象的 HTTP 请求
+  // `fetch` 是 Durable Object 的主要入口点。
+  // 它处理来自 Worker 的所有传入 HTTP 请求。
   /**
    * @param {Request} request
    */
   async fetch(request) {
-    return await handleErrors(request, async () => {
-      let url = new URL(request.url);
+    let url = new URL(request.url);
 
-      switch (url.pathname) {
-        case "/clear-limit": {
-          // =======================================================
-          // 新增：清空当前 RateLimiter 实例的速率限制
-          // =======================================================
-          // 不再检查 request.method，允许 GET 请求触发清空
-          await this.clearLimit();
-          return new Response("速率限制已清空。", { status: 200 });
-        }
-        default:
-          let now = Date.now() / 1000;
-          this.nextAllowedTime = Math.max(now, this.nextAllowedTime);
-    
-          if (request.method == "POST") {
-            // 每5秒允许一个操作
-            this.nextAllowedTime += 5;
-            await this.storage.put("nextAllowedTime", this.nextAllowedTime); // 保存状态
-          }
-    
-          // 返回客户端需要等待的秒数
-          let cooldown = Math.max(0, this.nextAllowedTime - now - 20);
-          return new Response(cooldown);
-      }
-    })
-  }
-
-  // =======================================================
-  // 新增：清空当前 Durable Object 实例的速率限制
-  // =======================================================
-  async clearLimit() {
-    await this.storage.delete("nextAllowedTime"); // 删除特定键
-    this.nextAllowedTime = 0; // 重置内存中的值
-    console.log(`RateLimiter ID: ${this.state.id} - 速率限制已清空。`);
-  }
-}
-
-// RateLimiterClient 在调用方实现速率限制逻辑
-class RateLimiterClient {
-  /**
-   * @param {function(): DurableObjectStub} getLimiterStub
-   * @param {function(Error): void} reportError
-   */
-  constructor(getLimiterStub, reportError) {
-    this.getLimiterStub = getLimiterStub;
-    this.reportError = reportError;
-    this.limiter = getLimiterStub();
-    this.inCooldown = false;
-  }
-
-  // 检查是否应该接受消息
-  checkLimit() {
-    if (this.inCooldown) {
-      return false;
+    // 我们每秒允许 3 个请求。如果超过，则返回 429。
+    let now = Date.now();
+    if (now - this.lastTimestamp > SECOND) {
+      this.count = 0;
+      this.lastTimestamp = now;
     }
-    this.inCooldown = true;
-    this.callLimiter();
-    return true;
-  }
 
-  // 内部方法，与速率限制器通信
-  async callLimiter() {
-    try {
-      let response;
-      try {
-        response = await this.limiter.fetch("https://dummy-url", {method: "POST"});
-      } catch (err) {
-        // 获取新的限制器存根并重试
-        this.limiter = this.getLimiterStub();
-        response = await this.limiter.fetch("https://dummy-url", {method: "POST"});
-      }
-
-      let cooldown = +(await response.text());
-      await new Promise(resolve => setTimeout(resolve, cooldown * 1000));
-      this.inCooldown = false;
-    } catch (err) {
-      this.reportError(err);
+    this.count++;
+    if (this.count > 3) {
+      return new Response("速率限制", {status: 429});
     }
+
+    return new Response("你好，我是速率限制器！", {status: 200});
   }
 }
