@@ -83,7 +83,8 @@ export default {
 
       if (!path[0]) {
         // 在根路径提供 HTML
-        return new Response(HTML, {headers: {"Content-Type": "text/html;charset=UTF-C8"}});
+        // === 修复：将 UTF-C8 改为 UTF-8 ===
+        return new Response(HTML, {headers: {"Content-Type": "text/html;charset=UTF-8"}});
       }
 
       switch (path[0]) {
@@ -314,7 +315,7 @@ export class ChatRoom {
         resolve(null); // Resolve with null to indicate timeout/error
       }, 5000); // 5秒超时
       
-      // === 关键修复：添加 { once: true } ===
+      // === 关键修复：添加 { once: true }，确保只触发一次 ===
       webSocket.addEventListener("message", msg => {
         try {
           let data = JSON.parse(msg.data);
