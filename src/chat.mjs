@@ -83,7 +83,7 @@ export default {
 
       if (!path[0]) {
         // 在根路径提供 HTML
-        return new Response(HTML, {headers: {"Content-Type": "text/html;charset=UTF-8"}});
+        return new Response(HTML, {headers: {"Content-Type": "text/html;charset=UTF-C8"}});
       }
 
       switch (path[0]) {
@@ -314,6 +314,7 @@ export class ChatRoom {
         resolve(null); // Resolve with null to indicate timeout/error
       }, 5000); // 5秒超时
       
+      // === 关键修复：添加 { once: true } ===
       webSocket.addEventListener("message", msg => {
         try {
           let data = JSON.parse(msg.data);
@@ -326,7 +327,7 @@ export class ChatRoom {
         } catch (err) {
           webSocket.send(JSON.stringify({error: "解析 JSON 失败: " + err}));
         }
-      });
+      }, { once: true }); // <--- 这个监听器只触发一次，用于获取用户名。
     });
 
     if (name === null) {
@@ -351,7 +352,7 @@ export class ChatRoom {
     // 通过发送 "ready" 消息告诉客户端我们已发送所有历史消息。
     session.webSocket.send(JSON.stringify({ready: true}));
 
-    // === 恢复核心聊天消息处理逻辑 ===
+    // === 核心聊天消息处理逻辑：此监听器处理所有后续的聊天消息 ===
     webSocket.addEventListener("message", async msg => {
       try {
         let data = JSON.parse(msg.data);
