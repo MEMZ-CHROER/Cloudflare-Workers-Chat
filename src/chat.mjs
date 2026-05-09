@@ -111,13 +111,11 @@ async function handleApiRequest(path, request, env) {
       return handleNewPrivateRoom(request, env);
     } else if (path.length === 2) {
       if (path[1] === "websocket") {
-        // 处理 websocket 连接请求 (例如: /api/room/some-room/websocket)
-        // 这里的路径应该由 /api/room/<name>/websocket 处理
+        // 这里的路径应该由 /api/room/<name>/websocket 处理，所以这里应该是 404
         return new Response("Not Found", {status: 404});
       } else if (path[1] === "clear" && request.method === "POST") {
         // 清空房间聊天记录和速率限制 (例如: /api/room/some-room/clear)
-        let roomName = path[0]; // 这里应该是 path[1]
-        roomName = path[1]; // 修正
+        let roomName = path[1];
         let id = env.rooms.idFromName(roomName);
         let roomObject = env.rooms.get(id);
         
@@ -234,10 +232,6 @@ export class ChatRoom {
       // 在 DO 启动时，如果存储中有会话信息，可以恢复，
       // 但对于 WebSocket 连接，它们会在 DO 重启时断开，
       // 所以这里不需要从存储中恢复活动会话。
-      // let storedSessions = await this.state.storage.get("sessions");
-      // if (storedSessions) {
-      //   this.sessions = storedSessions;
-      // }
     });
   }
 
@@ -252,7 +246,7 @@ export class ChatRoom {
 
       if (url.pathname === "/websocket") {
         // 创建一个新的 WebSocketPair。注意：这两个 WebSocket 连接
-        // 都可以在 Workers 的上下文中独立使用。
+        // 都可以在 Workers 的 contexts 中独立使用。
         let pair = new WebSocketPair();
 
         // 接受传入的连接，并将其传递给我们的 `webSocket` 处理程序。
@@ -261,7 +255,7 @@ export class ChatRoom {
         // 返回配对的另一半，作为客户端的 HTTP 响应。
         return new Response(null, { status: 101, webSocket: pair[0] });
       } else if (url.pathname === "/clear" && request.method === "POST") {
-        // 新增：处理清空聊天记录的请求
+        // 处理清空聊天记录的请求
         const adminSecretKey = request.headers.get("X-Admin-Secret-Key");
         if (adminSecretKey !== this.env.ADMIN_SECRET_KEY) {
           return new Response("Unauthorized", { status: 403 });
@@ -269,7 +263,6 @@ export class ChatRoom {
 
         await this.state.storage.deleteAll();
         // 清空内存中的会话列表，这将导致所有连接断开并重新连接
-        // 从而强制客户端重新同步
         this.sessions.forEach(session => {
           try {
             session.webSocket.close(1000, "管理员已清空聊天记录。");
@@ -280,7 +273,7 @@ export class ChatRoom {
         this.broadcast({ info: "管理员已清空聊天记录并重置房间。" });
         return new Response("Room cleared.", { status: 200 });
       } else if (url.pathname === "/kick" && request.method === "POST") {
-        // 新增：处理踢人请求
+        // 处理踢人请求
         const adminSecretKey = request.headers.get("X-Admin-Secret-Key");
         if (adminSecretKey !== this.env.ADMIN_SECRET_KEY) {
           return new Response("Unauthorized", { status: 403 });
@@ -358,6 +351,31 @@ export class ChatRoom {
     // 通过发送 "ready" 消息告诉客户端我们已发送所有历史消息。
     session.webSocket.send(JSON.stringify({ready: true}));
 
+    // === 恢复核心聊天消息处理逻辑 ===
+    webSocket.addEventListener("message", async msg => {
+      try {
+        let data = JSON.parse(msg.data);
+        if (data.message) {
+          // 检查是否在黑名单中
+          let expires = this.blockedUsers[session.name]; // 使用 session.name
+          if (expires && expires > Date.now()) {
+            webSocket.send(JSON.stringify({error: "你已被禁止发送消息，请稍后再试。"}));
+            return;
+          }
+
+          // 收到消息，广播给所有连接。
+          let chatMessage = { name: session.name, message: String(data.message).slice(0, 256), timestamp: Date.now() }; // 使用 session.name
+          this.broadcast(chatMessage);
+
+          // 将消息持久化到 Durable Object 的存储中。
+          await this.state.storage.put(String(chatMessage.timestamp), chatMessage);
+        }
+      } catch (err) {
+        webSocket.send(JSON.stringify({error: "解析 JSON 失败: " + err}));
+      }
+    });
+    // ===================================
+
     // 等待此会话关闭。
     await session.quit;
 
@@ -383,14 +401,13 @@ export class ChatRoom {
     this.sessions = cleanedSessions;
   }
 
-  // 新增：`kickMember` 方法，用于踢出指定成员
+  // `kickMember` 方法，用于踢出指定成员
   /**
    * @param {string} memberName - 要踢出的成员的名称
    * @returns {boolean} 如果成功踢出成员，则返回 true；否则返回 false。
    */
   async kickMember(memberName) {
     let kicked = false;
-    const initialSessionCount = this.sessions.length;
 
     this.sessions = this.sessions.filter(session => {
       if (session.name === memberName) {
@@ -416,42 +433,10 @@ export class ChatRoom {
   }
 
   /**
-   * @param {WebSocket} webSocket
-   * @param {any} message
-   */
-  async receive(webSocket, message) {
-    // 假设 `webSocket` 已经有一个 `name` 属性，这是在 `handleWebSocket` 中设置的
-    const session = this.sessions.find(s => s.webSocket === webSocket);
-    if (!session || !session.name) {
-      webSocket.send(JSON.stringify({error: "未知的会话或用户名。"}));
-      return;
-    }
-
-    if (message.message) {
-      // 检查是否在黑名单中
-      let expires = this.blockedUsers[session.name];
-      if (expires && expires > Date.now()) {
-        webSocket.send(JSON.stringify({error: "你已被禁止发送消息，请稍后再试。"}));
-        return;
-      }
-      // 收到消息，广播给所有连接。
-      let data = { name: session.name, message: String(message.message).slice(0, 256), timestamp: Date.now() };
-      this.broadcast(data);
-
-      // 将消息持久化到 Durable Object 的存储中。
-      // 使用 timestamp 作为键，确保消息的顺序和唯一性
-      await this.state.storage.put(String(data.timestamp), data);
-    }
-  }
-
-  /**
    * 此方法未在当前 Worker 逻辑中使用，仅为示例
    * @param {string} ip
    */
   async blockIp(ip) {
-    // 这是一个示例方法，您可以在此实现 IP 封禁逻辑
-    // 例如，将 IP 存储在 Durable Object 的存储中
-    // await this.state.storage.put(`blocked_ip_${ip}`, Date.now() + 24 * HOUR);
     console.log(`IP ${ip} blocked.`);
   }
 }
