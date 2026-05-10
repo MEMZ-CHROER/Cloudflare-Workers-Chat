@@ -1196,6 +1196,22 @@ export class RoomRegistry {
         });
       }
 
+      case "/user-seen": {
+        let name = url.searchParams.get("name");
+        if (!name) return new Response("请提供用户名", { status: 400 });
+        if (!this.knownUsers.has(name)) {
+          this.knownUsers.add(name);
+          await this.saveKnownUsers();
+        }
+        return new Response("ok", { status: 200 });
+      }
+
+      case "/known-users": {
+        return new Response(JSON.stringify([...this.knownUsers]), {
+          headers: {"Content-Type": "application/json"}
+        });
+      }
+
       default:
         return new Response("未找到", { status: 404 });
     }
