@@ -450,6 +450,41 @@ async function handleApiRequest(path, request, env) {
           }
         }
 
+        case "tag": {
+          // tag/set, tag/remove, tag/list
+          const action = path[2];
+          const userName = url.searchParams.get("name");
+
+          try {
+            let registryId = env.registry.idFromName("global");
+            let registryStub = env.registry.get(registryId);
+
+            if (action === "set") {
+              const tag = url.searchParams.get("tag");
+              if (!userName) return new Response("请提供用户名", { status: 400 });
+              if (!tag) return new Response("请提供标签", { status: 400 });
+              let response = await registryStub.fetch(new URL("https://dummy-url/tag/set?name=" + encodeURIComponent(userName) + "&tag=" + encodeURIComponent(tag)));
+              let text = await response.text();
+              return new Response(text, { status: response.status });
+            } else if (action === "remove") {
+              if (!userName) return new Response("请提供用户名", { status: 400 });
+              let response = await registryStub.fetch(new URL("https://dummy-url/tag/remove?name=" + encodeURIComponent(userName)));
+              let text = await response.text();
+              return new Response(text, { status: response.status });
+            } else if (action === "list") {
+              let response = await registryStub.fetch(new URL("https://dummy-url/tag/list"));
+              let data = await response.json();
+              return new Response(JSON.stringify(data), {
+                status: 200, headers: {"Content-Type": "application/json"}
+              });
+            }
+
+            return new Response("未找到该操作", { status: 404 });
+          } catch (error) {
+            return new Response("标签操作失败: " + error.message, { status: 500 });
+          }
+        }
+
         default:
           return new Response("未找到管理操作。", { status: 404 });
       }
@@ -629,7 +664,9 @@ export class ChatRoom {
     // 为所有在线用户排队"加入"消息
     for (let otherSession of this.sessions.values()) {
       if (otherSession.name) {
-        session.blockedMessages.push(JSON.stringify({joined: otherSession.name}));
+        let msg = {joined: otherSession.name};
+        if (otherSession.tag) msg.tag = otherSession.tag;
+        session.blockedMessages.push(JSON.stringify(msg));
       }
     }
 
@@ -710,6 +747,17 @@ export class ChatRoom {
           // 封禁检查失败，允许连接继续（尽力而为）
         }
 
+        // 获取用户标签
+        try {
+          let registryId = this.env.registry.idFromName("global");
+          let stub = this.env.registry.get(registryId);
+          let tagRes = await stub.fetch("https://dummy-url/tag/get?name=" + encodeURIComponent(session.name));
+          let tagData = await tagRes.json();
+          session.tag = tagData.tag || "";
+        } catch (e) {
+          session.tag = "";
+        }
+
         // 发送所有排队消息
         session.blockedMessages.forEach(queued => {
           webSocket.send(queued);
@@ -717,7 +765,9 @@ export class ChatRoom {
         delete session.blockedMessages;
 
         // 广播用户加入消息
-        this.broadcast({joined: session.name});
+        let joinMsg = {joined: session.name};
+        if (session.tag) joinMsg.tag = session.tag;
+        this.broadcast(joinMsg);
 
         this.updateRegistry();
 
@@ -778,6 +828,7 @@ export class ChatRoom {
           data: imageData,
           timestamp: Math.max(Date.now(), this.lastTimestamp + 1)
         };
+        if (session.tag) data.tag = session.tag;
         this.lastTimestamp = data.timestamp;
 
         let dataStr = JSON.stringify(data);
@@ -790,6 +841,7 @@ export class ChatRoom {
 
       // 构造净化后的消息
       data = { name: session.name, message: "" + data.message };
+      if (session.tag) data.tag = session.tag;
 
       if (data.message.length > 256) {
         webSocket.send(JSON.stringify({error: "消息过长"}));
@@ -939,6 +991,7 @@ export class RoomRegistry {
     this.storage = state.storage;
     this.rooms = new Map(); // name -> { count }
     this.banned = new Set(); // 被封禁的用户名
+    this.tags = new Map(); // username -> tag 字符串
     this.load();
   }
 
@@ -951,6 +1004,10 @@ export class RoomRegistry {
     if (bannedData) {
       this.banned = new Set(bannedData);
     }
+    let tagsData = await this.storage.get("tags");
+    if (tagsData) {
+      this.tags = new Map(tagsData);
+    }
   }
 
   async save() {
@@ -959,6 +1016,10 @@ export class RoomRegistry {
 
   async saveBanned() {
     await this.storage.put("banned", [...this.banned]);
+  }
+
+  async saveTags() {
+    await this.storage.put("tags", [...this.tags]);
   }
 
   async fetch(request) {
@@ -1023,6 +1084,44 @@ export class RoomRegistry {
           headers: {"Content-Type": "application/json"}
         });
         return new Response(JSON.stringify({banned: this.banned.has(name)}), {
+          headers: {"Content-Type": "application/json"}
+        });
+      }
+
+      case "/tag/set": {
+        let name = url.searchParams.get("name");
+        let tag = url.searchParams.get("tag");
+        if (!name) return new Response("请提供用户名", { status: 400 });
+        if (!tag) return new Response("请提供标签", { status: 400 });
+        this.tags.set(name, tag);
+        await this.saveTags();
+        return new Response("已为 " + name + " 设置标签 [" + tag + "]", { status: 200 });
+      }
+
+      case "/tag/remove": {
+        let name = url.searchParams.get("name");
+        if (!name) return new Response("请提供用户名", { status: 400 });
+        this.tags.delete(name);
+        await this.saveTags();
+        return new Response("已移除 " + name + " 的标签", { status: 200 });
+      }
+
+      case "/tag/get": {
+        let name = url.searchParams.get("name");
+        if (!name) return new Response(JSON.stringify({tag: ""}), {
+          headers: {"Content-Type": "application/json"}
+        });
+        return new Response(JSON.stringify({tag: this.tags.get(name) || ""}), {
+          headers: {"Content-Type": "application/json"}
+        });
+      }
+
+      case "/tag/list": {
+        let result = {};
+        for (let [name, tag] of this.tags) {
+          result[name] = tag;
+        }
+        return new Response(JSON.stringify(result), {
           headers: {"Content-Type": "application/json"}
         });
       }
