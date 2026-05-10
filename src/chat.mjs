@@ -553,6 +553,27 @@ export class ChatRoom {
         return;
       }
 
+      // 处理图片消息
+      if (data.type === "image") {
+        let imageData = "" + data.data;
+        if (imageData.length > 1024 * 1024) {
+          webSocket.send(JSON.stringify({error: "图片过大"}));
+          return;
+        }
+
+        data = {
+          name: session.name,
+          type: "image",
+          data: imageData,
+          timestamp: Math.max(Date.now(), this.lastTimestamp + 1)
+        };
+        this.lastTimestamp = data.timestamp;
+
+        let dataStr = JSON.stringify(data);
+        this.broadcast(dataStr);
+        return;
+      }
+
       // 构造净化后的消息
       data = { name: session.name, message: "" + data.message };
 
