@@ -571,6 +571,9 @@ export class ChatRoom {
 
         let dataStr = JSON.stringify(data);
         this.broadcast(dataStr);
+        // 保存图片到历史记录
+        let key = new Date(data.timestamp).toISOString();
+        await this.storage.put(key, dataStr);
         return;
       }
 
