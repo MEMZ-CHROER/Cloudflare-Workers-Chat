@@ -377,6 +377,39 @@ async function handleApiRequest(path, request, env) {
           }
         }
 
+        case "ban": {
+          // ban/add, ban/remove, ban/list
+          const action = path[2]; // add, remove, list
+          const userName = url.searchParams.get("name");
+
+          try {
+            let registryId = env.registry.idFromName("global");
+            let registryStub = env.registry.get(registryId);
+
+            if (action === "add") {
+              if (!userName) return new Response("请提供用户名", { status: 400 });
+              let response = await registryStub.fetch(new URL("https://dummy-url/ban?name=" + encodeURIComponent(userName)));
+              let text = await response.text();
+              return new Response(text, { status: response.status });
+            } else if (action === "remove") {
+              if (!userName) return new Response("请提供用户名", { status: 400 });
+              let response = await registryStub.fetch(new URL("https://dummy-url/unban?name=" + encodeURIComponent(userName)));
+              let text = await response.text();
+              return new Response(text, { status: response.status });
+            } else if (action === "list") {
+              let response = await registryStub.fetch(new URL("https://dummy-url/banned-list"));
+              let data = await response.json();
+              return new Response(JSON.stringify(data), {
+                status: 200, headers: {"Content-Type": "application/json"}
+              });
+            }
+
+            return new Response("未找到该操作", { status: 404 });
+          } catch (error) {
+            return new Response("封禁操作失败: " + error.message, { status: 500 });
+          }
+        }
+
         case "blacklist": {
           const action = path[2]; // add, remove, list
           const roomId = path[3];
@@ -663,6 +696,21 @@ export class ChatRoom {
           return;
         }
 
+        // 检查用户是否被封禁
+        try {
+          let registryId = this.env.registry.idFromName("global");
+          let stub = this.env.registry.get(registryId);
+          let banCheck = await stub.fetch("https://dummy-url/is-banned?name=" + encodeURIComponent(session.name));
+          let banResult = await banCheck.json();
+          if (banResult.banned) {
+            webSocket.send(JSON.stringify({error: "你已被封禁，无法加入聊天室"}));
+            webSocket.close(1000, "banned");
+            return;
+          }
+        } catch (e) {
+          // 封禁检查失败，允许连接继续（尽力而为）
+        }
+
         // 发送所有排队消息
         session.blockedMessages.forEach(queued => {
           webSocket.send(queued);
@@ -891,6 +939,7 @@ export class RoomRegistry {
     this.state = state;
     this.storage = state.storage;
     this.rooms = new Map(); // name -> { count }
+    this.banned = new Set(); // 被封禁的用户名
     this.load();
   }
 
@@ -899,10 +948,18 @@ export class RoomRegistry {
     if (data) {
       this.rooms = new Map(data);
     }
+    let bannedData = await this.storage.get("banned");
+    if (bannedData) {
+      this.banned = new Set(bannedData);
+    }
   }
 
   async save() {
     await this.storage.put("rooms", [...this.rooms]);
+  }
+
+  async saveBanned() {
+    await this.storage.put("banned", [...this.banned]);
   }
 
   async fetch(request) {
@@ -935,6 +992,38 @@ export class RoomRegistry {
           }
         }
         return new Response(JSON.stringify(result), {
+          headers: {"Content-Type": "application/json"}
+        });
+      }
+
+      case "/ban": {
+        let name = url.searchParams.get("name");
+        if (!name) return new Response("请提供用户名", { status: 400 });
+        this.banned.add(name);
+        await this.saveBanned();
+        return new Response(name + " 已被封禁", { status: 200 });
+      }
+
+      case "/unban": {
+        let name = url.searchParams.get("name");
+        if (!name) return new Response("请提供用户名", { status: 400 });
+        this.banned.delete(name);
+        await this.saveBanned();
+        return new Response(name + " 已被解封", { status: 200 });
+      }
+
+      case "/banned-list": {
+        return new Response(JSON.stringify([...this.banned]), {
+          headers: {"Content-Type": "application/json"}
+        });
+      }
+
+      case "/is-banned": {
+        let name = url.searchParams.get("name");
+        if (!name) return new Response(JSON.stringify({banned: false}), {
+          headers: {"Content-Type": "application/json"}
+        });
+        return new Response(JSON.stringify({banned: this.banned.has(name)}), {
           headers: {"Content-Type": "application/json"}
         });
       }
