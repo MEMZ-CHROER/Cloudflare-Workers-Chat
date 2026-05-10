@@ -66,8 +66,61 @@ p:last-of-type {
 }
 
 @media(max-width:600px) {
-  #roster { display: none; }
   #chatlog { right: 0; }
+
+  #roster {
+    display: none;
+    position: fixed;
+    right: 0;
+    top: 0;
+    bottom: 32px;
+    width: 200px;
+    z-index: 10;
+    background: #fff;
+    border-left: 1px solid #ccc;
+    box-shadow: -2px 0 10px rgba(0,0,0,0.2);
+    padding: 40px 8px 8px;
+  }
+  #roster.show {
+    display: block;
+  }
+
+  #roster-backdrop {
+    display: none;
+    position: fixed;
+    z-index: 9;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.3);
+  }
+  #roster-backdrop.show {
+    display: block;
+  }
+}
+
+#roster-toggle {
+  display: none;
+  position: fixed;
+  right: 8px;
+  top: 8px;
+  z-index: 11;
+  width: 36px;
+  height: 36px;
+  font-size: 18px;
+  line-height: 36px;
+  text-align: center;
+  cursor: pointer;
+  background: #eee;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  user-select: none;
+}
+@media(max-width:600px) {
+  #roster-toggle {
+    display: block;
+  }
 }
 
 #chat-input {
@@ -195,6 +248,8 @@ p:last-of-type {
         <div id="spacer"></div>
       </div>
       <div id="roster"></div>
+      <div id="roster-backdrop"></div>
+      <div id="roster-toggle">&#128101;</div>
       <input id="chat-input" placeholder="输入消息...">
     </form>
   </body>
@@ -362,6 +417,26 @@ function startChat() {
       }
     });
   }
+
+  // 移动端用户列表切换
+  let rosterToggle = document.querySelector("#roster-toggle");
+  let rosterBackdrop = document.querySelector("#roster-backdrop");
+  let rosterPanel = document.querySelector("#roster");
+  function hideRoster() {
+    rosterPanel.classList.remove("show");
+    rosterBackdrop.classList.remove("show");
+  }
+  rosterToggle.addEventListener("click", event => {
+    event.stopPropagation();
+    rosterPanel.classList.toggle("show");
+    rosterBackdrop.classList.toggle("show");
+  });
+  rosterBackdrop.addEventListener("click", hideRoster);
+  document.body.addEventListener("click", event => {
+    if (!rosterPanel.contains(event.target) && !rosterToggle.contains(event.target)) {
+      hideRoster();
+    }
+  });
 
   join();
 }
