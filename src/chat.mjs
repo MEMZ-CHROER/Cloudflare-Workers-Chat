@@ -401,6 +401,39 @@ export class ChatRoom {
         return;
       }
 
+      // 处理踢人请求
+      if (data.type === "kick") {
+        let targetName = data.target;
+        if (!targetName) {
+          webSocket.send(JSON.stringify({error: "未指定要踢出的用户"}));
+          return;
+        }
+
+        if (targetName === session.name) {
+          webSocket.send(JSON.stringify({error: "不能踢出自己"}));
+          return;
+        }
+
+        // 查找目标用户并踢出
+        let kickedEntry = null;
+        for (let [ws, s] of this.sessions) {
+          if (s.name === targetName) {
+            kickedEntry = {ws, s};
+            break;
+          }
+        }
+
+        if (kickedEntry) {
+          this.sessions.delete(kickedEntry.ws);
+          kickedEntry.ws.close(1000, "kicked");
+          this.broadcast({kicked: targetName});
+          webSocket.send(JSON.stringify({system: "你已将 " + targetName + " 踢出房间"}));
+        } else {
+          webSocket.send(JSON.stringify({error: "未找到用户 " + targetName}));
+        }
+        return;
+      }
+
       // 构造净化后的消息
       data = { name: session.name, message: "" + data.message };
 
