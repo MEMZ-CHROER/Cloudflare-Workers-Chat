@@ -201,7 +201,7 @@ p:last-of-type {
   border: none;
   border-top: none;
   padding-left: 32px;
-  padding-right: 40px;
+  padding-right: 110px;
   outline: none;
 }
 #image-btn {
@@ -223,6 +223,56 @@ p:last-of-type {
 }
 #image-btn:hover {
   background: #eee;
+}
+#emoji-btn {
+  position: fixed;
+  z-index: 1;
+  bottom: 0;
+  right: 64px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: none;
+  font-size: 18px;
+  line-height: 32px;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+}
+#emoji-btn:hover {
+  background: #eee;
+}
+#emoji-panel {
+  display: none;
+  position: fixed;
+  z-index: 20;
+  bottom: 36px;
+  right: 4px;
+  width: 320px;
+  max-height: 240px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 -2px 12px rgba(0,0,0,0.15);
+  overflow-y: auto;
+  padding: 8px;
+}
+#emoji-panel.show {
+  display: block;
+}
+#emoji-panel .emoji-item {
+  display: inline-block;
+  width: 36px;
+  height: 36px;
+  line-height: 36px;
+  text-align: center;
+  font-size: 22px;
+  cursor: pointer;
+  border-radius: 4px;
+  user-select: none;
+}
+#emoji-panel .emoji-item:hover {
+  background: #f0f0f0;
 }
 #chatlog img {
   max-width: 240px;
@@ -368,6 +418,8 @@ p:last-of-type {
       <div id="roster-backdrop"></div>
       <div id="roster-toggle">&#128101;</div>
       <input id="chat-input" placeholder="输入消息...">
+      <button id="emoji-btn" type="button">😊</button>
+      <div id="emoji-panel"></div>
       <button id="image-btn" type="button">发送图片</button>
       <input type="file" id="image-picker" accept="image/*" style="display:none">
     </form>
@@ -640,6 +692,50 @@ function startChat() {
 
     currentWebSocket.send(JSON.stringify({type: "image", data: base64}));
     imagePicker.value = "";
+  });
+
+  // 表情包
+  const EMOJIS = [
+    "😀", "😂", "🤣", "😃", "😄", "😅", "😆", "😉", "😊", "😋",
+    "😎", "😍", "🥰", "😘", "🤗", "🤩", "🤔", "🤨", "😐", "😑",
+    "😶", "🙄", "😏", "😣", "😥", "😮", "🤐", "😯", "😪", "😫",
+    "😴", "😌", "😛", "😜", "😝", "🤤", "😒", "😓", "😔", "😕",
+    "🙃", "🤑", "😲", "☹️", "🙁", "😖", "😞", "😟", "😤", "😢",
+    "😭", "😦", "😧", "😨", "😩", "🤯", "😬", "😰", "😱", "🥵",
+    "🥶", "😳", "🤪", "😵", "😡", "😠", "🤬",
+    "👍", "👎", "👌", "✌️", "🤞", "🤟", "🤘", "🤙", "👋", "🤚",
+    "✋", "🖐️", "🖖", "👏", "🙌", "🤲", "🤝", "🙏", "✍️", "💪",
+    "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💕",
+    "💞", "💓", "💗", "💖", "💘", "💝", "💋", "👀", "🔥", "⭐",
+    "🎉", "🎊", "🎈", "🎁", "✨", "🌟", "💡", "📌", "✅", "❌"
+  ];
+  let emojiPanel = document.querySelector("#emoji-panel");
+  // 填充表情
+  EMOJIS.forEach(e => {
+    let span = document.createElement("span");
+    span.className = "emoji-item";
+    span.textContent = e;
+    span.title = e;
+    span.addEventListener("click", () => {
+      if (currentWebSocket) {
+        currentWebSocket.send(JSON.stringify({message: e}));
+        chatlog.scrollBy(0, 1e8);
+      }
+      emojiPanel.classList.remove("show");
+    });
+    emojiPanel.appendChild(span);
+  });
+  // 切换表情面板
+  document.querySelector("#emoji-btn").addEventListener("click", event => {
+    event.stopPropagation();
+    emojiPanel.classList.toggle("show");
+  });
+  // 点击面板外关闭
+  document.body.addEventListener("click", () => {
+    emojiPanel.classList.remove("show");
+  }, false);
+  emojiPanel.addEventListener("click", event => {
+    event.stopPropagation();
   });
 
   join();
