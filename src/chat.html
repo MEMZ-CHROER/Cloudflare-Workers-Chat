@@ -866,6 +866,17 @@ function join() {
       // 聊天室已被管理员清空，刷新页面
       addChatMessage(null, "* 聊天记录已被管理员清空，即将刷新...");
       setTimeout(() => document.location.reload(), 1500);
+    } else if (data.type === "tag-update") {
+      // 标签已更新，刷新在线列表显示
+      for (let child of roster.childNodes) {
+        if ((child.dataset.name || child.innerText) == data.name) {
+          let displayName = data.name;
+          if (data.tag) displayName = "[" + data.tag + "] " + data.name;
+          child.innerText = displayName;
+          child.dataset.name = data.name;
+          break;
+        }
+      }
     } else {
       // 常规聊天消息
       if (data.timestamp > lastSeenTimestamp) {
@@ -942,7 +953,7 @@ async function handleCommand(text) {
 
   switch (cmd) {
     case "/help":
-      addChatMessage(null, "* 可用命令: /kick <用户> 踢出用户 | /ban <用户> 封禁用户 | /unban <用户> 解封用户 | /clear 清空聊天记录 | /help 显示帮助");
+      addChatMessage(null, "* 可用命令: /kick <用户> 踢出 | /ban <用户> 封禁 | /unban <用户> 解封 | /tag <用户> <标签> 设置标签 | /untag <用户> 移除标签 | /clear 清空 | /help 帮助");
       break;
 
     case "/kick": {
@@ -980,6 +991,39 @@ async function handleCommand(text) {
       if (!adminKey) { addChatMessage(null, "* 错误: 请先登录管理后台（访问 /admin）"); break; }
       try {
         let r = await fetch("/api/admin/ban/remove?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(arg));
+        let t = await r.text();
+        addChatMessage(null, "* " + t);
+      } catch (e) {
+        addChatMessage(null, "* 操作失败: " + e.message);
+      }
+      break;
+    }
+
+    case "/tag": {
+      let parts = text.split(/\s+/);
+      let targetUser = parts[1];
+      let tagValue = parts.slice(2).join(" ");
+      if (!targetUser || !tagValue) { addChatMessage(null, "* 用法: /tag <用户名> <标签>"); break; }
+      let adminKey = localStorage.getItem("admin_key");
+      if (!adminKey) { addChatMessage(null, "* 错误: 请先登录管理后台（访问 /admin）"); break; }
+      try {
+        let r = await fetch("/api/admin/tag/set?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(targetUser) + "&tag=" + encodeURIComponent(tagValue));
+        let t = await r.text();
+        addChatMessage(null, "* " + t);
+      } catch (e) {
+        addChatMessage(null, "* 操作失败: " + e.message);
+      }
+      break;
+    }
+
+    case "/untag": {
+      let parts = text.split(/\s+/);
+      let targetUser = parts[1];
+      if (!targetUser) { addChatMessage(null, "* 用法: /untag <用户名>"); break; }
+      let adminKey = localStorage.getItem("admin_key");
+      if (!adminKey) { addChatMessage(null, "* 错误: 请先登录管理后台（访问 /admin）"); break; }
+      try {
+        let r = await fetch("/api/admin/tag/remove?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(targetUser));
         let t = await r.text();
         addChatMessage(null, "* " + t);
       } catch (e) {
