@@ -201,7 +201,34 @@ p:last-of-type {
   border: none;
   border-top: none;
   padding-left: 32px;
+  padding-right: 40px;
   outline: none;
+}
+#image-btn {
+  position: fixed;
+  z-index: 1;
+  bottom: 0;
+  right: 0;
+  width: 36px;
+  height: 32px;
+  border: none;
+  background: none;
+  font-size: 18px;
+  line-height: 32px;
+  text-align: center;
+  cursor: pointer;
+  padding: 0;
+  user-select: none;
+}
+#image-btn:hover {
+  background: #eee;
+}
+#chatlog img {
+  max-width: 240px;
+  max-height: 240px;
+  border-radius: 6px;
+  display: block;
+  margin: 4px 0;
 }
 #chatroom::before {
   z-index: 1;
@@ -340,6 +367,8 @@ p:last-of-type {
       <div id="roster-backdrop"></div>
       <div id="roster-toggle">&#128101;</div>
       <input id="chat-input" placeholder="输入消息...">
+      <button id="image-btn">&#x1F5BC;</button>
+      <input type="file" id="image-picker" accept="image/*" style="display:none">
     </form>
   </body>
 
@@ -570,6 +599,33 @@ function startChat() {
     }
   });
 
+  // 图片发送
+  let imagePicker = document.querySelector("#image-picker");
+  document.querySelector("#image-btn").addEventListener("click", () => {
+    imagePicker.click();
+  });
+  imagePicker.addEventListener("change", async () => {
+    let file = imagePicker.files[0];
+    if (!file || !currentWebSocket) return;
+
+    let img = await createImageBitmap(file);
+    let maxSize = 800;
+    let w = img.width, h = img.height;
+    if (w > maxSize || h > maxSize) {
+      if (w > h) { h = h * maxSize / w; w = maxSize; }
+      else { w = w * maxSize / h; h = maxSize; }
+    }
+    let canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    let ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0, w, h);
+    let base64 = canvas.toDataURL("image/jpeg", 0.7);
+    img.close();
+
+    currentWebSocket.send(JSON.stringify({type: "image", data: base64}));
+    imagePicker.value = "";
+  });
+
   join();
 }
 
@@ -673,6 +729,12 @@ function join() {
         }
         chatlog.scrollBy(0, 1e8);
       }
+    } else if (data.type === "image") {
+      // 图片消息
+      if (data.timestamp > lastSeenTimestamp) {
+        addChatImage(data.name, data.data);
+        lastSeenTimestamp = data.timestamp;
+      }
     } else {
       // 常规聊天消息
       if (data.timestamp > lastSeenTimestamp) {
@@ -710,6 +772,22 @@ function addChatMessage(name, text) {
   }
   p.appendChild(document.createTextNode(text));
 
+  chatlog.appendChild(p);
+  chatlog.scrollBy(0, 1e8);
+}
+
+function addChatImage(name, data) {
+  let p = document.createElement("p");
+  if (name) {
+    let tag = document.createElement("span");
+    tag.className = "username";
+    tag.innerText = name + ": ";
+    p.appendChild(tag);
+  }
+  let img = document.createElement("img");
+  img.src = data;
+  img.alt = "图片";
+  p.appendChild(img);
   chatlog.appendChild(p);
   chatlog.scrollBy(0, 1e8);
 }
