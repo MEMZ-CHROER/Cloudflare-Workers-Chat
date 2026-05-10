@@ -170,6 +170,14 @@ body { font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 16px; back
     <h2>被封禁用户</h2>
     <div id="banned-users-list">加载中...</div>
   </div>
+  <div id="ip-banned-section" style="background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:16px;padding:16px">
+    <h2 style="font-size:110%;margin:0 0 12px 0">被封禁IP</h2>
+    <div style="margin-bottom:12px;display:flex;gap:8px">
+      <input type="text" id="ban-ip-input" placeholder="输入IP地址" style="padding:6px 10px;border:1px solid #ccc;border-radius:4px;font-size:90%;flex:1;max-width:240px;outline:none">
+      <button id="ban-ip-btn" style="padding:6px 14px;border:1px solid #e88;color:#c00;background:#fff;border-radius:4px;cursor:pointer;font-size:90%">封禁IP</button>
+    </div>
+    <div id="ip-banned-list">加载中...</div>
+  </div>
   <div id="history-users-section">
     <h2>历史用户</h2>
     <div class="summary">所有曾加入过聊天室的用户</div>
@@ -193,6 +201,7 @@ if (adminKey) {
   loadRooms();
   loadGlobalUsers();
   loadBannedList();
+  loadIpBannedList();
   loadHistoryUsers();
   startAutoRefresh();
 }
@@ -210,6 +219,7 @@ document.querySelector("#login-btn").addEventListener("click", () => {
       loadRooms();
       loadGlobalUsers();
       loadBannedList();
+      loadIpBannedList();
       loadHistoryUsers();
       startAutoRefresh();
     })
@@ -230,6 +240,11 @@ document.querySelector("#logout-btn").addEventListener("click", () => {
   document.querySelector("#login-form").style.display = "block";
   document.querySelector("#admin-key").value = "";
   document.querySelector("#admin-key").focus();
+});
+
+document.querySelector("#ban-ip-btn").addEventListener("click", banIpByInput);
+document.querySelector("#ban-ip-input").addEventListener("keydown", e => {
+  if (e.key === "Enter") banIpByInput();
 });
 
 async function loadRooms() {
@@ -391,6 +406,60 @@ async function loadBannedList() {
   }
 }
 
+async function loadIpBannedList() {
+  let container = document.querySelector("#ip-banned-list");
+  try {
+    let r = await fetch("/api/admin/ip-ban/list?key=" + encodeURIComponent(adminKey));
+    let banned = await r.json();
+    if (!Array.isArray(banned) || banned.length === 0) {
+      container.innerHTML = '<div style="color:#888;padding:8px 0">暂无被封禁IP</div>';
+      return;
+    }
+    let html = '';
+    banned.forEach(ip => {
+      html += '<div class="banned-user-item">' +
+        '<span class="name">' + escapeHtml(ip) + '</span>' +
+        '<button class="unban-btn" onclick="unbanIp(\'' + ip.replace(/'/g, "\\'") + '\')">解封</button>' +
+        '</div>';
+    });
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = '<div style="color:#c00;padding:8px 0">加载失败: ' + e.message + '</div>';
+  }
+}
+
+function banIpByInput() {
+  let input = document.querySelector("#ban-ip-input");
+  let ip = input.value.trim();
+  if (!ip) { alert("请输入IP地址"); return; }
+  banIp(ip);
+  input.value = "";
+}
+
+async function banIp(ip) {
+  if (!confirm("确定封禁IP " + ip + " 吗？")) return;
+  try {
+    let r = await fetch("/api/admin/ip-ban/add?key=" + encodeURIComponent(adminKey) + "&ip=" + encodeURIComponent(ip));
+    let text = await r.text();
+    alert(text);
+    loadIpBannedList();
+  } catch (e) {
+    alert("操作失败");
+  }
+}
+
+async function unbanIp(ip) {
+  if (!confirm("确定解封IP " + ip + " 吗？")) return;
+  try {
+    let r = await fetch("/api/admin/ip-ban/remove?key=" + encodeURIComponent(adminKey) + "&ip=" + encodeURIComponent(ip));
+    let text = await r.text();
+    alert(text);
+    loadIpBannedList();
+  } catch (e) {
+    alert("操作失败");
+  }
+}
+
 async function loadHistoryUsers() {
   let container = document.querySelector("#history-users-list");
   try {
@@ -531,10 +600,17 @@ async function toggleRoom(card, name) {
 
 async function loadRoomDetail(detail, name) {
   try {
-    let [users, blacklist] = await Promise.all([
+    let [users, blacklist, userDetails] = await Promise.all([
       fetch("/api/admin/room-users/" + encodeURIComponent(name) + "?key=" + encodeURIComponent(adminKey)).then(r => r.json()),
-      fetch("/api/admin/blacklist/list/" + encodeURIComponent(name) + "?key=" + encodeURIComponent(adminKey)).then(r => r.json())
+      fetch("/api/admin/blacklist/list/" + encodeURIComponent(name) + "?key=" + encodeURIComponent(adminKey)).then(r => r.json()),
+      fetch("/api/admin/room-users-detail/" + encodeURIComponent(name) + "?key=" + encodeURIComponent(adminKey)).then(r => r.json())
     ]);
+
+    // 构建 IP 映射
+    let ipMap = {};
+    if (Array.isArray(userDetails)) {
+      userDetails.forEach(u => { if (u.name) ipMap[u.name] = u.ip || ""; });
+    }
 
     let html = '<div class="room-actions">';
     html += '<button class="btn-danger" onclick="clearRoom(\'' + name.replace(/'/g, "\\'") + '\')">清空聊天记录</button>';
@@ -546,14 +622,19 @@ async function loadRoomDetail(detail, name) {
       html += '<div style="color:#888;font-size:90%">暂无在线用户</div>';
     } else {
       users.forEach(u => {
+        let userIp = ipMap[u] || "";
+        let ipBadge = userIp ? ' <span style="color:#999;font-size:85%">(' + escapeHtml(userIp) + ')</span>' : '';
         html += '<div class="user-item">' +
-          '<span class="name">' + escapeHtml(u) + '</span>' +
+          '<span class="name">' + escapeHtml(u) + ipBadge + '</span>' +
           '<span>' +
             '<button class="kick-btn" onclick="kickUser(\'' + name.replace(/'/g, "\\'") + '\', \'' + u.replace(/'/g, "\\'") + '\')">踢出</button>';
         if (blacklist.includes(u)) {
           html += '<button onclick="removeBlacklist(\'' + name.replace(/'/g, "\\'") + '\', \'' + u.replace(/'/g, "\\'") + '\')">移出黑名单</button>';
         } else {
           html += '<button onclick="addBlacklist(\'' + name.replace(/'/g, "\\'") + '\', \'' + u.replace(/'/g, "\\'") + '\')">拉黑</button>';
+        }
+        if (userIp) {
+          html += '<button class="ban-btn" onclick="banIp(\'' + userIp.replace(/'/g, "\\'") + '\')">封禁IP</button>';
         }
         html += '<button class="ban-btn" onclick="banUser(\'' + u.replace(/'/g, "\\'") + '\')">封禁</button>';
         html += '</span></div>';
@@ -657,6 +738,7 @@ function startAutoRefresh() {
       }
     }
     loadBannedList();
+    loadIpBannedList();
   }, 10000);
 }
 
