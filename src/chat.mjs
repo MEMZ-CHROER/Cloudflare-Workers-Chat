@@ -41,6 +41,7 @@
 
 // 我们通过导入将 HTML 内容作为 ArrayBuffer 加载，这样可以直接提供静态资源而无需额外存储
 import HTML from "./chat.html";
+import ADMIN from "./admin.html";
 
 // `handleErrors()` 是一个实用函数，用于包装 HTTP 请求处理器并在出错时向客户端返回错误信息
 async function handleErrors(request, func) {
@@ -67,6 +68,7 @@ async function handleErrors(request, func) {
  * @property {DurableObjectNamespace} rooms
  * @property {DurableObjectNamespace} limiters
  * @property {string} ADMIN_SECRET_KEY
+ * @property {DurableObjectNamespace} registry
  */
 
 // 使用 `export default` 导出主要的 fetch 事件处理器
@@ -91,6 +93,10 @@ export default {
           // 处理 `/api/...` 请求
           return handleApiRequest(path.slice(1), request, env);
 
+        case "admin":
+          // 管理后台页面
+          return new Response(ADMIN, {headers: {"Content-Type": "text/html;charset=UTF-8"}});
+
         default:
           return new Response("未找到", {status: 404});
       }
@@ -108,6 +114,24 @@ async function handleApiRequest(path, request, env) {
   const url = new URL(request.url);
 
   switch (path[0]) {
+    case "rooms": {
+      if (path[1] === "list") {
+        // 返回所有房间及在线人数
+        try {
+          let registryId = env.registry.idFromName("global");
+          let registryStub = env.registry.get(registryId);
+          let response = await registryStub.fetch(new URL("https://dummy-url/list"));
+          let data = await response.json();
+          return new Response(JSON.stringify(data), {
+            headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
+          });
+        } catch (error) {
+          return new Response(JSON.stringify({error: error.message}), {status: 500});
+        }
+      }
+      return new Response("未找到", {status: 404});
+    }
+
     case "room": {
       // 处理 `/api/room/...` 请求
       if (!path[1]) {
@@ -139,6 +163,7 @@ async function handleApiRequest(path, request, env) {
       // 构造新的 URL 并转发请求
       let newUrl = new URL(request.url);
       newUrl.pathname = "/" + path.slice(2).join("/");
+      newUrl.searchParams.set("room_name", name);
 
       return roomObject.fetch(newUrl, request);
     }
@@ -217,7 +242,7 @@ async function handleApiRequest(path, request, env) {
                 let limiterObject = env.limiters.get(limiterId);
 
                 const clearResponse = await limiterObject.fetch(new URL("https://dummy-url/clear-limit"));
-                
+
                 if (clearResponse.ok) {
                   return new Response(`IP '${targetIp}' 的速率限制已清空。`, { status: 200 });
                 } else {
@@ -228,6 +253,274 @@ async function handleApiRequest(path, request, env) {
                 console.error("清空速率限制时发生错误:", error);
                 return new Response(`清空速率限制时发生内部错误: ${error.message}`, { status: 500 });
             }
+        }
+
+        case "room-users": {
+          const roomId = path[2];
+          if (!roomId) return new Response("请提供房间名称或 ID。", { status: 400 });
+
+          let id;
+          if (roomId.match(/^[0-9a-f]{64}$/)) {
+            id = env.rooms.idFromString(roomId);
+          } else if (roomId.length <= 32) {
+            id = env.rooms.idFromName(roomId);
+          } else {
+            return new Response("房间名称/ID格式不正确或过长。", { status: 400 });
+          }
+
+          try {
+            let roomObject = env.rooms.get(id);
+            let response = await roomObject.fetch(new URL("https://dummy-url/users"));
+            let users = await response.json();
+            return new Response(JSON.stringify(users), {
+              status: 200, headers: {"Content-Type": "application/json"}
+            });
+          } catch (error) {
+            return new Response("获取用户列表失败: " + error.message, { status: 500 });
+          }
+        }
+
+        case "kick-user": {
+          const roomId = path[2];
+          const userName = url.searchParams.get("name");
+          if (!roomId) return new Response("请提供房间名称或 ID。", { status: 400 });
+          if (!userName) return new Response("请提供用户名（?name=xxx）。", { status: 400 });
+
+          let id;
+          if (roomId.match(/^[0-9a-f]{64}$/)) {
+            id = env.rooms.idFromString(roomId);
+          } else if (roomId.length <= 32) {
+            id = env.rooms.idFromName(roomId);
+          } else {
+            return new Response("房间名称/ID格式不正确或过长。", { status: 400 });
+          }
+
+          try {
+            let roomObject = env.rooms.get(id);
+            let doUrl = "https://dummy-url/do-kick?name=" + encodeURIComponent(userName);
+            let response = await roomObject.fetch(new URL(doUrl));
+            let text = await response.text();
+            if (response.ok) {
+              return new Response(text, { status: 200 });
+            }
+            return new Response(text, { status: response.status });
+          } catch (error) {
+            return new Response("踢人失败: " + error.message, { status: 500 });
+          }
+        }
+
+        case "all-users": {
+          // 获取所有房间的在线用户（按房间分组）
+          try {
+            let registryId = env.registry.idFromName("global");
+            let registryStub = env.registry.get(registryId);
+            let roomsResponse = await registryStub.fetch(new URL("https://dummy-url/list"));
+            let rooms = await roomsResponse.json();
+
+            let result = {};
+            for (let [name] of Object.entries(rooms)) {
+              let id;
+              if (name.match(/^[0-9a-f]{64}$/)) {
+                id = env.rooms.idFromString(name);
+              } else if (name.length <= 32) {
+                id = env.rooms.idFromName(name);
+              } else continue;
+
+              let roomObject = env.rooms.get(id);
+              let usersResponse = await roomObject.fetch(new URL("https://dummy-url/users"));
+              let users = await usersResponse.json();
+              if (users.length > 0) {
+                result[name] = users;
+              }
+            }
+
+            return new Response(JSON.stringify(result), {
+              status: 200, headers: {"Content-Type": "application/json"}
+            });
+          } catch (error) {
+            return new Response("获取用户列表失败: " + error.message, { status: 500 });
+          }
+        }
+
+        case "global-kick": {
+          const userName = url.searchParams.get("name");
+          if (!userName) return new Response("请提供用户名", { status: 400 });
+
+          try {
+            let registryId = env.registry.idFromName("global");
+            let registryStub = env.registry.get(registryId);
+            let roomsResponse = await registryStub.fetch(new URL("https://dummy-url/list"));
+            let rooms = await roomsResponse.json();
+
+            let kickedFrom = [];
+            for (let [name] of Object.entries(rooms)) {
+              let id;
+              if (name.match(/^[0-9a-f]{64}$/)) {
+                id = env.rooms.idFromString(name);
+              } else if (name.length <= 32) {
+                id = env.rooms.idFromName(name);
+              } else continue;
+
+              let roomObject = env.rooms.get(id);
+              let doUrl = "https://dummy-url/do-kick?name=" + encodeURIComponent(userName);
+              let response = await roomObject.fetch(new URL(doUrl));
+              if (response.ok) {
+                kickedFrom.push(name);
+              }
+            }
+
+            return new Response(JSON.stringify({kickedFrom}), {
+              status: 200, headers: {"Content-Type": "application/json"}
+            });
+          } catch (error) {
+            return new Response("全局踢出失败: " + error.message, { status: 500 });
+          }
+        }
+
+        case "users": {
+          // users/history
+          try {
+            let registryId = env.registry.idFromName("global");
+            let registryStub = env.registry.get(registryId);
+            if (path[2] === "history") {
+              let response = await registryStub.fetch(new URL("https://dummy-url/known-users"));
+              let data = await response.json();
+              return new Response(JSON.stringify(data), {
+                status: 200, headers: {"Content-Type": "application/json"}
+              });
+            }
+            return new Response("未找到该操作", { status: 404 });
+          } catch (error) {
+            return new Response("获取用户列表失败: " + error.message, { status: 500 });
+          }
+        }
+
+        case "ban": {
+          // ban/add, ban/remove, ban/list
+          const action = path[2]; // add, remove, list
+          const userName = url.searchParams.get("name");
+
+          try {
+            let registryId = env.registry.idFromName("global");
+            let registryStub = env.registry.get(registryId);
+
+            if (action === "add") {
+              if (!userName) return new Response("请提供用户名", { status: 400 });
+              let response = await registryStub.fetch(new URL("https://dummy-url/ban?name=" + encodeURIComponent(userName)));
+              let text = await response.text();
+              return new Response(text, { status: response.status });
+            } else if (action === "remove") {
+              if (!userName) return new Response("请提供用户名", { status: 400 });
+              let response = await registryStub.fetch(new URL("https://dummy-url/unban?name=" + encodeURIComponent(userName)));
+              let text = await response.text();
+              return new Response(text, { status: response.status });
+            } else if (action === "list") {
+              let response = await registryStub.fetch(new URL("https://dummy-url/banned-list"));
+              let data = await response.json();
+              return new Response(JSON.stringify(data), {
+                status: 200, headers: {"Content-Type": "application/json"}
+              });
+            }
+
+            return new Response("未找到该操作", { status: 404 });
+          } catch (error) {
+            return new Response("封禁操作失败: " + error.message, { status: 500 });
+          }
+        }
+
+        case "blacklist": {
+          const action = path[2]; // add, remove, list
+          const roomId = path[3];
+
+          if (!roomId) {
+            return new Response("请提供房间名称或 ID。", { status: 400 });
+          }
+
+          let id;
+          if (roomId.match(/^[0-9a-f]{64}$/)) {
+            id = env.rooms.idFromString(roomId);
+          } else if (roomId.length <= 32) {
+            id = env.rooms.idFromName(roomId);
+          } else {
+            return new Response("房间名称/ID格式不正确或过长。", { status: 400 });
+          }
+
+          try {
+            let roomObject = env.rooms.get(id);
+            let doUrl = "https://dummy-url/blacklist/" + action;
+            if (action === "add" || action === "remove") {
+              const userName = url.searchParams.get("name");
+              if (!userName) {
+                return new Response("请提供用户名（?name=xxx）。", { status: 400 });
+              }
+              doUrl += "?name=" + encodeURIComponent(userName);
+            }
+
+            const response = await roomObject.fetch(new URL(doUrl));
+            const text = await response.text();
+            if (response.ok) {
+              return new Response(text, { status: 200 });
+            } else {
+              return new Response(text, { status: response.status });
+            }
+          } catch (error) {
+            return new Response("操作黑名单时发生错误: " + error.message, { status: 500 });
+          }
+        }
+
+        case "tag": {
+          // tag/set, tag/remove, tag/list
+          const action = path[2];
+          const userName = url.searchParams.get("name");
+
+          try {
+            let registryId = env.registry.idFromName("global");
+            let registryStub = env.registry.get(registryId);
+
+            // 辅助函数：更新所有房间的标签
+            async function updateTagInRooms(name, tag) {
+              try {
+                let roomsResponse = await registryStub.fetch(new URL("https://dummy-url/list"));
+                let rooms = await roomsResponse.json();
+                for (let [roomName] of Object.entries(rooms)) {
+                  let id;
+                  if (roomName.match(/^[0-9a-f]{64}$/)) {
+                    id = env.rooms.idFromString(roomName);
+                  } else if (roomName.length <= 32) {
+                    id = env.rooms.idFromName(roomName);
+                  } else continue;
+                  let roomObject = env.rooms.get(id);
+                  await roomObject.fetch(new URL("https://dummy-url/tag-update?name=" + encodeURIComponent(name) + "&tag=" + encodeURIComponent(tag)));
+                }
+              } catch (e) { /* 尽力而为 */ }
+            }
+
+            if (action === "set") {
+              const tag = url.searchParams.get("tag");
+              if (!userName) return new Response("请提供用户名", { status: 400 });
+              if (!tag) return new Response("请提供标签", { status: 400 });
+              let response = await registryStub.fetch(new URL("https://dummy-url/tag/set?name=" + encodeURIComponent(userName) + "&tag=" + encodeURIComponent(tag)));
+              let text = await response.text();
+              await updateTagInRooms(userName, tag);
+              return new Response(text, { status: response.status });
+            } else if (action === "remove") {
+              if (!userName) return new Response("请提供用户名", { status: 400 });
+              let response = await registryStub.fetch(new URL("https://dummy-url/tag/remove?name=" + encodeURIComponent(userName)));
+              let text = await response.text();
+              await updateTagInRooms(userName, "");
+              return new Response(text, { status: response.status });
+            } else if (action === "list") {
+              let response = await registryStub.fetch(new URL("https://dummy-url/tag/list"));
+              let data = await response.json();
+              return new Response(JSON.stringify(data), {
+                status: 200, headers: {"Content-Type": "application/json"}
+              });
+            }
+
+            return new Response("未找到该操作", { status: 404 });
+          } catch (error) {
+            return new Response("标签操作失败: " + error.message, { status: 500 });
+          }
         }
 
         default:
@@ -268,6 +561,11 @@ export class ChatRoom {
     });
 
     this.lastTimestamp = 0;  // 最后看到的消息时间戳
+
+    this.blacklist = new Set();  // 黑名单用户列表
+    this.storage.get("blacklist").then(list => {
+      if (list) this.blacklist = new Set(list);
+    });
   }
 
   // 处理发送到此对象的 HTTP 请求
@@ -277,6 +575,11 @@ export class ChatRoom {
   async fetch(request) {
     return await handleErrors(request, async () => {
       let url = new URL(request.url);
+
+      // 提取并存储房间名（来自主 Worker 转发时设置的参数）
+      if (!this.roomName) {
+        this.roomName = url.searchParams.get("room_name");
+      }
 
       switch (url.pathname) {
         case "/websocket": {
@@ -299,6 +602,81 @@ export class ChatRoom {
           return new Response("聊天记录已清空。", { status: 200 });
         }
 
+        case "/blacklist/add": {
+          let name = url.searchParams.get("name");
+          if (!name) return new Response("请提供用户名", { status: 400 });
+          this.blacklist.add(name);
+          await this.storage.put("blacklist", [...this.blacklist]);
+          return new Response(name + " 已被加入黑名单", { status: 200 });
+        }
+
+        case "/blacklist/remove": {
+          let name = url.searchParams.get("name");
+          if (!name) return new Response("请提供用户名", { status: 400 });
+          this.blacklist.delete(name);
+          await this.storage.put("blacklist", [...this.blacklist]);
+          return new Response(name + " 已被移出黑名单", { status: 200 });
+        }
+
+        case "/blacklist/list": {
+          return new Response(JSON.stringify([...this.blacklist]), {
+            status: 200, headers: {"Content-Type": "application/json"}
+          });
+        }
+
+        case "/users": {
+          let users = [];
+          for (let s of this.sessions.values()) {
+            if (s.name) users.push(s.name);
+          }
+          return new Response(JSON.stringify(users), {
+            status: 200, headers: {"Content-Type": "application/json"}
+          });
+        }
+
+        case "/do-kick": {
+          let targetName = url.searchParams.get("name");
+          if (!targetName) return new Response("请提供用户名", {status: 400});
+
+          let kickedWs = null;
+          for (let [ws, s] of this.sessions) {
+            if (s.name === targetName) {
+              kickedWs = ws;
+              break;
+            }
+          }
+
+          if (kickedWs) {
+            this.sessions.delete(kickedWs);
+            kickedWs.close(1000, "kicked");
+            this.broadcast({kicked: targetName});
+            await this.updateRegistry();
+            return new Response("已踢出 " + targetName, {status: 200});
+          }
+          return new Response("未找到用户 " + targetName, {status: 404});
+        }
+
+        case "/do-clear": {
+          await this.clearAllMessages();
+          return new Response("聊天记录已清空。", { status: 200 });
+        }
+
+        case "/tag-update": {
+          let targetName = url.searchParams.get("name");
+          let newTag = url.searchParams.get("tag") || "";
+          if (!targetName) return new Response("请提供用户名", {status: 400});
+
+          for (let [ws, s] of this.sessions) {
+            if (s.name === targetName) {
+              s.tag = newTag;
+              break;
+            }
+          }
+
+          this.broadcast({type: "tag-update", name: targetName, tag: newTag});
+          return new Response("ok", {status: 200});
+        }
+
         default:
           return new Response("未找到", {status: 404});
       }
@@ -312,10 +690,9 @@ export class ChatRoom {
     // 调用 Durable Object 存储的 deleteAll() 方法来清空所有数据
     await this.storage.deleteAll();
     console.log(`Durable Object ID: ${this.state.id} - 所有聊天记录已清空。`);
-    // 清空内存中的会话列表（已连接的 WebSocket），虽然它们会在断开后消失
-    // 这里清空主要是为了逻辑清晰，实际会话需要客户端重新连接或发送消息来更新状态
-    this.sessions.clear(); 
     this.lastTimestamp = 0; // 重置时间戳
+    // 通知所有在线用户刷新聊天室
+    this.broadcast({type: "room-cleared"});
   }
 
 
@@ -341,7 +718,9 @@ export class ChatRoom {
     // 为所有在线用户排队"加入"消息
     for (let otherSession of this.sessions.values()) {
       if (otherSession.name) {
-        session.blockedMessages.push(JSON.stringify({joined: otherSession.name}));
+        let msg = {joined: otherSession.name};
+        if (otherSession.tag) msg.tag = otherSession.tag;
+        session.blockedMessages.push(JSON.stringify(msg));
       }
     }
 
@@ -352,6 +731,25 @@ export class ChatRoom {
     backlog.forEach(value => {
       session.blockedMessages.push(value);
     });
+
+    // 通知 Registry 房间存在并更新人数
+    this.updateRegistry();
+  }
+
+  // 通知 RoomRegistry 更新当前房间的在线人数
+  async updateRegistry() {
+    if (!this.roomName || !this.env.registry) return;
+    try {
+      let registryId = this.env.registry.idFromName("global");
+      let stub = this.env.registry.get(registryId);
+      let count = 0;
+      for (let s of this.sessions.values()) {
+        if (s.name) count++;
+      }
+      await stub.fetch("https://dummy-url/update?name=" + encodeURIComponent(this.roomName) + "&count=" + count);
+    } catch (e) {
+      // Registry 更新是尽力而为的，失败不影响聊天功能
+    }
   }
 
   // 处理 WebSocket 消息
@@ -388,6 +786,39 @@ export class ChatRoom {
           return;
         }
 
+        // 检查用户是否被封禁
+        try {
+          let registryId = this.env.registry.idFromName("global");
+          let stub = this.env.registry.get(registryId);
+          let banCheck = await stub.fetch("https://dummy-url/is-banned?name=" + encodeURIComponent(session.name));
+          let banResult = await banCheck.json();
+          if (banResult.banned) {
+            webSocket.send(JSON.stringify({error: "你已被封禁，无法加入聊天室"}));
+            webSocket.close(1000, "banned");
+            return;
+          }
+        } catch (e) {
+          // 封禁检查失败，允许连接继续（尽力而为）
+        }
+
+        // 获取用户标签
+        try {
+          let registryId = this.env.registry.idFromName("global");
+          let stub = this.env.registry.get(registryId);
+          let tagRes = await stub.fetch("https://dummy-url/tag/get?name=" + encodeURIComponent(session.name));
+          let tagData = await tagRes.json();
+          session.tag = tagData.tag || "";
+        } catch (e) {
+          session.tag = "";
+        }
+
+        // 注册用户到历史记录
+        try {
+          let registryId = this.env.registry.idFromName("global");
+          let stub = this.env.registry.get(registryId);
+          await stub.fetch("https://dummy-url/user-seen?name=" + encodeURIComponent(session.name));
+        } catch (e) { /* 尽力而为 */ }
+
         // 发送所有排队消息
         session.blockedMessages.forEach(queued => {
           webSocket.send(queued);
@@ -395,14 +826,83 @@ export class ChatRoom {
         delete session.blockedMessages;
 
         // 广播用户加入消息
-        this.broadcast({joined: session.name});
+        let joinMsg = {joined: session.name};
+        if (session.tag) joinMsg.tag = session.tag;
+        this.broadcast(joinMsg);
+
+        this.updateRegistry();
 
         webSocket.send(JSON.stringify({ready: true}));
         return;
       }
 
+      // 处理踢人请求
+      if (data.type === "kick") {
+        // 检查是否在黑名单中
+        if (this.blacklist.has(session.name)) {
+          webSocket.send(JSON.stringify({error: "你已被加入黑名单，无法踢人"}));
+          return;
+        }
+
+        let targetName = data.target;
+        if (!targetName) {
+          webSocket.send(JSON.stringify({error: "未指定要踢出的用户"}));
+          return;
+        }
+
+        if (targetName === session.name) {
+          webSocket.send(JSON.stringify({error: "不能踢出自己"}));
+          return;
+        }
+
+        // 查找目标用户并踢出
+        let kickedEntry = null;
+        for (let [ws, s] of this.sessions) {
+          if (s.name === targetName) {
+            kickedEntry = {ws, s};
+            break;
+          }
+        }
+
+        if (kickedEntry) {
+          this.sessions.delete(kickedEntry.ws);
+          kickedEntry.ws.close(1000, "kicked");
+          this.broadcast({kicked: targetName});
+          webSocket.send(JSON.stringify({system: "你已将 " + targetName + " 踢出房间"}));
+        } else {
+          webSocket.send(JSON.stringify({error: "未找到用户 " + targetName}));
+        }
+        return;
+      }
+
+      // 处理图片消息
+      if (data.type === "image") {
+        let imageData = "" + data.data;
+        if (imageData.length > 1024 * 1024) {
+          webSocket.send(JSON.stringify({error: "图片过大"}));
+          return;
+        }
+
+        data = {
+          name: session.name,
+          type: "image",
+          data: imageData,
+          timestamp: Math.max(Date.now(), this.lastTimestamp + 1)
+        };
+        if (session.tag) data.tag = session.tag;
+        this.lastTimestamp = data.timestamp;
+
+        let dataStr = JSON.stringify(data);
+        this.broadcast(dataStr);
+        // 保存图片到历史记录
+        let key = new Date(data.timestamp).toISOString();
+        await this.storage.put(key, dataStr);
+        return;
+      }
+
       // 构造净化后的消息
       data = { name: session.name, message: "" + data.message };
+      if (session.tag) data.tag = session.tag;
 
       if (data.message.length > 256) {
         webSocket.send(JSON.stringify({error: "消息过长"}));
@@ -433,6 +933,7 @@ export class ChatRoom {
     if (session.name) {
       this.broadcast({quit: session.name});
     }
+    this.updateRegistry();
   }
 
   async webSocketClose(webSocket, code, reason, wasClean) {
@@ -538,6 +1039,182 @@ export class RateLimiter {
     await this.storage.delete("nextAllowedTime"); // 删除特定键
     this.nextAllowedTime = 0; // 重置内存中的值
     console.log(`RateLimiter ID: ${this.state.id} - 速率限制已清空。`);
+  }
+}
+
+// =======================================================================================
+// RoomRegistry Durable Object 类
+
+// RoomRegistry 是一个全局单例，用于跟踪所有房间及其在线人数
+export class RoomRegistry {
+  constructor(state, env) {
+    this.state = state;
+    this.storage = state.storage;
+    this.rooms = new Map(); // name -> { count }
+    this.banned = new Set(); // 被封禁的用户名
+    this.tags = new Map(); // username -> tag 字符串
+    this.knownUsers = new Set(); // 所有历史在线用户名
+    this.load();
+  }
+
+  async load() {
+    let data = await this.storage.get("rooms");
+    if (data) {
+      this.rooms = new Map(data);
+    }
+    let bannedData = await this.storage.get("banned");
+    if (bannedData) {
+      this.banned = new Set(bannedData);
+    }
+    let tagsData = await this.storage.get("tags");
+    if (tagsData) {
+      this.tags = new Map(tagsData);
+    }
+    let knownUsersData = await this.storage.get("knownUsers");
+    if (knownUsersData) {
+      this.knownUsers = new Set(knownUsersData);
+    }
+  }
+
+  async save() {
+    await this.storage.put("rooms", [...this.rooms]);
+  }
+
+  async saveBanned() {
+    await this.storage.put("banned", [...this.banned]);
+  }
+
+  async saveTags() {
+    await this.storage.put("tags", [...this.tags]);
+  }
+
+  async saveKnownUsers() {
+    await this.storage.put("knownUsers", [...this.knownUsers]);
+  }
+
+  async fetch(request) {
+    let url = new URL(request.url);
+
+    switch (url.pathname) {
+      case "/register": {
+        let name = url.searchParams.get("name");
+        if (!name) return new Response("请提供房间名", { status: 400 });
+        if (!this.rooms.has(name)) {
+          this.rooms.set(name, { count: 0 });
+        }
+        return new Response("ok");
+      }
+
+      case "/update": {
+        let name = url.searchParams.get("name");
+        let count = parseInt(url.searchParams.get("count"), 10);
+        if (!name) return new Response("请提供房间名", { status: 400 });
+        this.rooms.set(name, { count: count || 0 });
+        await this.save();
+        return new Response("ok");
+      }
+
+      case "/list": {
+        let result = {};
+        for (let [name, info] of this.rooms) {
+          if (info.count > 0) {
+            result[name] = info.count;
+          }
+        }
+        return new Response(JSON.stringify(result), {
+          headers: {"Content-Type": "application/json"}
+        });
+      }
+
+      case "/ban": {
+        let name = url.searchParams.get("name");
+        if (!name) return new Response("请提供用户名", { status: 400 });
+        this.banned.add(name);
+        await this.saveBanned();
+        return new Response(name + " 已被封禁", { status: 200 });
+      }
+
+      case "/unban": {
+        let name = url.searchParams.get("name");
+        if (!name) return new Response("请提供用户名", { status: 400 });
+        this.banned.delete(name);
+        await this.saveBanned();
+        return new Response(name + " 已被解封", { status: 200 });
+      }
+
+      case "/banned-list": {
+        return new Response(JSON.stringify([...this.banned]), {
+          headers: {"Content-Type": "application/json"}
+        });
+      }
+
+      case "/is-banned": {
+        let name = url.searchParams.get("name");
+        if (!name) return new Response(JSON.stringify({banned: false}), {
+          headers: {"Content-Type": "application/json"}
+        });
+        return new Response(JSON.stringify({banned: this.banned.has(name)}), {
+          headers: {"Content-Type": "application/json"}
+        });
+      }
+
+      case "/tag/set": {
+        let name = url.searchParams.get("name");
+        let tag = url.searchParams.get("tag");
+        if (!name) return new Response("请提供用户名", { status: 400 });
+        if (!tag) return new Response("请提供标签", { status: 400 });
+        this.tags.set(name, tag);
+        await this.saveTags();
+        return new Response("已为 " + name + " 设置标签 [" + tag + "]", { status: 200 });
+      }
+
+      case "/tag/remove": {
+        let name = url.searchParams.get("name");
+        if (!name) return new Response("请提供用户名", { status: 400 });
+        this.tags.delete(name);
+        await this.saveTags();
+        return new Response("已移除 " + name + " 的标签", { status: 200 });
+      }
+
+      case "/tag/get": {
+        let name = url.searchParams.get("name");
+        if (!name) return new Response(JSON.stringify({tag: ""}), {
+          headers: {"Content-Type": "application/json"}
+        });
+        return new Response(JSON.stringify({tag: this.tags.get(name) || ""}), {
+          headers: {"Content-Type": "application/json"}
+        });
+      }
+
+      case "/tag/list": {
+        let result = {};
+        for (let [name, tag] of this.tags) {
+          result[name] = tag;
+        }
+        return new Response(JSON.stringify(result), {
+          headers: {"Content-Type": "application/json"}
+        });
+      }
+
+      case "/user-seen": {
+        let name = url.searchParams.get("name");
+        if (!name) return new Response("请提供用户名", { status: 400 });
+        if (!this.knownUsers.has(name)) {
+          this.knownUsers.add(name);
+          await this.saveKnownUsers();
+        }
+        return new Response("ok", { status: 200 });
+      }
+
+      case "/known-users": {
+        return new Response(JSON.stringify([...this.knownUsers]), {
+          headers: {"Content-Type": "application/json"}
+        });
+      }
+
+      default:
+        return new Response("未找到", { status: 404 });
+    }
   }
 }
 
