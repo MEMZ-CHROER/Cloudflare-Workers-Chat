@@ -544,6 +544,7 @@ export class ChatRoom {
             this.sessions.delete(kickedWs);
             kickedWs.close(1000, "kicked");
             this.broadcast({kicked: targetName});
+            await this.updateRegistry();
             return new Response("已踢出 " + targetName, {status: 200});
           }
           return new Response("未找到用户 " + targetName, {status: 404});
