@@ -35,6 +35,16 @@ body {
 #chatlog span.username {
   font-weight: bold;
 }
+#chatlog span.tag {
+  display: inline-block;
+  font-size: 80%;
+  font-weight: bold;
+  color: #fff;
+  background: #e68a2e;
+  padding: 0 5px;
+  border-radius: 3px;
+  margin-right: 2px;
+}
 #spacer {
   height: calc(100vh - 32px - 5em);
 }
@@ -789,7 +799,10 @@ function join() {
       addChatMessage(null, "* " + data.system);
     } else if (data.joined) {
       let p = document.createElement("p");
-      p.innerText = data.joined;
+      let displayName = data.joined;
+      if (data.tag) displayName = "[" + data.tag + "] " + data.joined;
+      p.innerText = displayName;
+      p.dataset.name = data.joined;
       p.style.cursor = "pointer";
       p.title = "点击踢出此用户";
       p.addEventListener("click", () => {
@@ -799,18 +812,20 @@ function join() {
       });
       roster.appendChild(p);
       if (wroteWelcomeMessages) {
-        addChatMessage(null, "* " + data.joined + " 进入了聊天室");
+        let joinText = "* " + data.joined + " 进入了聊天室";
+        if (data.tag) joinText = "* [" + data.tag + "]" + data.joined + " 进入了聊天室";
+        addChatMessage(null, joinText);
       }
     } else if (data.quit) {
       for (let child of roster.childNodes) {
-        if (child.innerText == data.quit) {
+        if ((child.dataset.name || child.innerText) == data.quit) {
           roster.removeChild(child);
           break;
         }
       }
     } else if (data.kicked) {
       for (let child of roster.childNodes) {
-        if (child.innerText == data.kicked) {
+        if ((child.dataset.name || child.innerText) == data.kicked) {
           roster.removeChild(child);
           break;
         }
@@ -844,7 +859,7 @@ function join() {
     } else if (data.type === "image") {
       // 图片消息
       if (data.timestamp > lastSeenTimestamp) {
-        addChatImage(data.name, data.data);
+        addChatImage(data.name, data.data, data.tag);
         lastSeenTimestamp = data.timestamp;
       }
     } else if (data.type === "room-cleared") {
@@ -854,7 +869,7 @@ function join() {
     } else {
       // 常规聊天消息
       if (data.timestamp > lastSeenTimestamp) {
-        addChatMessage(data.name, data.message);
+        addChatMessage(data.name, data.message, data.tag);
         lastSeenTimestamp = data.timestamp;
       }
     }
@@ -878,13 +893,19 @@ function join() {
   });
 }
 
-function addChatMessage(name, text) {
+function addChatMessage(name, text, tag) {
   let p = document.createElement("p");
   if (name) {
-    let tag = document.createElement("span");
-    tag.className = "username";
-    tag.innerText = name + ": ";
-    p.appendChild(tag);
+    if (tag) {
+      let badge = document.createElement("span");
+      badge.className = "tag";
+      badge.textContent = tag;
+      p.appendChild(badge);
+    }
+    let span = document.createElement("span");
+    span.className = "username";
+    span.innerText = name + ": ";
+    p.appendChild(span);
   }
   p.appendChild(document.createTextNode(text));
 
@@ -892,13 +913,19 @@ function addChatMessage(name, text) {
   chatlog.scrollBy(0, 1e8);
 }
 
-function addChatImage(name, data) {
+function addChatImage(name, data, tag) {
   let p = document.createElement("p");
   if (name) {
-    let tag = document.createElement("span");
-    tag.className = "username";
-    tag.innerText = name + ": ";
-    p.appendChild(tag);
+    if (tag) {
+      let badge = document.createElement("span");
+      badge.className = "tag";
+      badge.textContent = tag;
+      p.appendChild(badge);
+    }
+    let span = document.createElement("span");
+    span.className = "username";
+    span.innerText = name + ": ";
+    p.appendChild(span);
   }
   let img = document.createElement("img");
   img.src = data;
