@@ -123,6 +123,79 @@ p:last-of-type {
   }
 }
 
+#room-list-form {
+  position: fixed;
+  z-index: 2;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background-color: white;
+  overflow-y: auto;
+}
+#room-list-form h2 {
+  text-align: center;
+  font-size: 150%;
+  margin-top: 2em;
+  margin-bottom: 1em;
+}
+#room-list {
+  max-width: 400px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+.room-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.room-item:hover {
+  background: #f5f5f5;
+  border-color: #999;
+}
+.room-item .room-name {
+  font-weight: bold;
+  font-size: 110%;
+}
+.room-item .room-count {
+  color: #666;
+  font-size: 90%;
+}
+#room-list-form p {
+  text-align: center;
+  color: #999;
+  margin: 16px 0;
+}
+#show-room-form-btn {
+  display: block;
+  margin: 0 auto;
+  font-size: 120%;
+  border: 1px solid #bbb;
+  background-color: #eee;
+  padding: 8px 24px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+#show-room-form-btn:hover {
+  background-color: #ddd;
+}
+#room-list-loading,
+#room-list-empty,
+#room-list-error {
+  text-align: center;
+  padding: 40px 16px;
+  color: #999;
+}
+#room-list-error {
+  color: #c00;
+}
+
 #chat-input {
   position: fixed;
   width: 100%;
@@ -237,6 +310,14 @@ p:last-of-type {
         <br>由
         <a href="https://blog.cloudflare.com/introducing-workers-durable-objects" target="_blank">Cloudflare Workers Durable Objects</a>提供技术支持</p>
     </form>
+    <div id="room-list-form" style="display:none">
+      <h2>选择房间</h2>
+      <div id="room-list">
+        <div id="room-list-loading">加载中...</div>
+      </div>
+      <p>或</p>
+      <button id="show-room-form-btn">输入自定义房间名称</button>
+    </div>
     <form id="room-form" action="/fake-form-action">
       <p>输入公共房间名称：</p>
       <input id="room-name" placeholder="房间名称"><button id="go-public">进入 &raquo;</button>
@@ -288,7 +369,7 @@ function startNameChooser() {
     event.preventDefault();
     username = nameInput.value;
     if (username.length > 0) {
-      startRoomChooser();
+      startRoomList();
     }
   });
 
@@ -301,8 +382,61 @@ function startNameChooser() {
   nameInput.focus();
 }
 
+function startRoomList() {
+  nameForm.style.display = "none";
+  document.querySelector("#room-list-form").style.display = "block";
+
+  // 如果 URL 有 hash，直接跳过
+  if (document.location.hash.length > 1) {
+    roomname = document.location.hash.slice(1);
+    startChat();
+    return;
+  }
+
+  // 绑定"输入自定义房间名称"按钮
+  document.querySelector("#show-room-form-btn").addEventListener("click", () => {
+    document.querySelector("#room-list-form").style.display = "none";
+    startRoomChooser();
+  });
+
+  // 加载房间列表
+  loadRoomList();
+}
+
+async function loadRoomList() {
+  let container = document.querySelector("#room-list");
+  container.innerHTML = '<div id="room-list-loading">加载中...</div>';
+
+  try {
+    let response = await fetch("/api/rooms/list");
+    if (!response.ok) throw new Error("请求失败");
+    let rooms = await response.json();
+    let entries = Object.entries(rooms);
+
+    if (entries.length === 0) {
+      container.innerHTML = '<div id="room-list-empty">暂无公开房间，请创建或输入房间名称</div>';
+      return;
+    }
+
+    container.innerHTML = "";
+    entries.forEach(([name, count]) => {
+      let div = document.createElement("div");
+      div.className = "room-item";
+      div.innerHTML = '<span class="room-name">#' + name + '</span><span class="room-count">&#128101; ' + count + ' 在线</span>';
+      div.addEventListener("click", () => {
+        roomname = name;
+        startChat();
+      });
+      container.appendChild(div);
+    });
+  } catch (err) {
+    container.innerHTML = '<div id="room-list-error">加载房间列表失败: ' + err.message + '</div>';
+  }
+}
+
 function startRoomChooser() {
-  nameForm.remove();
+  nameForm.style.display = "none";
+  document.querySelector("#room-list-form").style.display = "none";
 
   if (document.location.hash.length > 1) {
     roomname = document.location.hash.slice(1);
@@ -352,6 +486,7 @@ function startRoomChooser() {
 
 function startChat() {
   roomForm.remove();
+  document.querySelector("#room-list-form").style.display = "none";
 
   // 对房间名称进行规范化处理
   roomname = roomname.replace(/[^a-zA-Z0-9_-]/g, "").replace(/_/g, "-").toLowerCase();
