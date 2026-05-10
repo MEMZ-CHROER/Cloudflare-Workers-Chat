@@ -552,8 +552,16 @@ function startChat() {
     event.preventDefault();
 
     if (currentWebSocket) {
-      currentWebSocket.send(JSON.stringify({message: chatInput.value}));
+      let text = chatInput.value;
       chatInput.value = "";
+
+      // 检查是否是指令
+      if (text.startsWith("/")) {
+        handleCommand(text);
+        return;
+      }
+
+      currentWebSocket.send(JSON.stringify({message: text}));
 
       // 发送消息时自动滚动到底部
       chatlog.scrollBy(0, 1e8);
@@ -798,6 +806,78 @@ function addChatImage(name, data) {
   p.appendChild(img);
   chatlog.appendChild(p);
   chatlog.scrollBy(0, 1e8);
+}
+
+async function handleCommand(text) {
+  let parts = text.split(/\s+/);
+  let cmd = parts[0].toLowerCase();
+  let arg = parts.slice(1).join(" ");
+
+  switch (cmd) {
+    case "/help":
+      addChatMessage(null, "* 可用命令: /kick <用户> 踢出用户 | /ban <用户> 封禁用户 | /unban <用户> 解封用户 | /clear 清空聊天记录 | /help 显示帮助");
+      break;
+
+    case "/kick": {
+      if (!arg) { addChatMessage(null, "* 用法: /kick <用户名>"); break; }
+      let adminKey = localStorage.getItem("admin_key");
+      if (!adminKey) { addChatMessage(null, "* 错误: 请先登录管理后台（访问 /admin）"); break; }
+      try {
+        let r = await fetch("/api/admin/kick-user/" + encodeURIComponent(roomname) + "?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(arg));
+        let t = await r.text();
+        addChatMessage(null, "* " + t);
+      } catch (e) {
+        addChatMessage(null, "* 操作失败: " + e.message);
+      }
+      break;
+    }
+
+    case "/ban": {
+      if (!arg) { addChatMessage(null, "* 用法: /ban <用户名>"); break; }
+      let adminKey = localStorage.getItem("admin_key");
+      if (!adminKey) { addChatMessage(null, "* 错误: 请先登录管理后台（访问 /admin）"); break; }
+      try {
+        await fetch("/api/admin/global-kick?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(arg));
+        let r = await fetch("/api/admin/ban/add?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(arg));
+        let t = await r.text();
+        addChatMessage(null, "* " + t);
+      } catch (e) {
+        addChatMessage(null, "* 操作失败: " + e.message);
+      }
+      break;
+    }
+
+    case "/unban": {
+      if (!arg) { addChatMessage(null, "* 用法: /unban <用户名>"); break; }
+      let adminKey = localStorage.getItem("admin_key");
+      if (!adminKey) { addChatMessage(null, "* 错误: 请先登录管理后台（访问 /admin）"); break; }
+      try {
+        let r = await fetch("/api/admin/ban/remove?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(arg));
+        let t = await r.text();
+        addChatMessage(null, "* " + t);
+      } catch (e) {
+        addChatMessage(null, "* 操作失败: " + e.message);
+      }
+      break;
+    }
+
+    case "/clear": {
+      let adminKey = localStorage.getItem("admin_key");
+      if (!adminKey) { addChatMessage(null, "* 错误: 请先登录管理后台（访问 /admin）"); break; }
+      if (!confirm("确定清空 " + roomname + " 的聊天记录吗？")) break;
+      try {
+        let r = await fetch("/api/admin/clear-room/" + encodeURIComponent(roomname) + "?key=" + encodeURIComponent(adminKey));
+        let t = await r.text();
+        addChatMessage(null, "* " + t);
+      } catch (e) {
+        addChatMessage(null, "* 操作失败: " + e.message);
+      }
+      break;
+    }
+
+    default:
+      addChatMessage(null, "* 未知命令: " + cmd + "，输入 /help 查看可用命令");
+  }
 }
 
 startNameChooser();
