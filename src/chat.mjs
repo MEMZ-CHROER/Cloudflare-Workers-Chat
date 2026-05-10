@@ -309,6 +309,74 @@ async function handleApiRequest(path, request, env) {
           }
         }
 
+        case "all-users": {
+          // 获取所有房间的在线用户（按房间分组）
+          try {
+            let registryId = env.registry.idFromName("global");
+            let registryStub = env.registry.get(registryId);
+            let roomsResponse = await registryStub.fetch(new URL("https://dummy-url/list"));
+            let rooms = await roomsResponse.json();
+
+            let result = {};
+            for (let [name] of Object.entries(rooms)) {
+              let id;
+              if (name.match(/^[0-9a-f]{64}$/)) {
+                id = env.rooms.idFromString(name);
+              } else if (name.length <= 32) {
+                id = env.rooms.idFromName(name);
+              } else continue;
+
+              let roomObject = env.rooms.get(id);
+              let usersResponse = await roomObject.fetch(new URL("https://dummy-url/users"));
+              let users = await usersResponse.json();
+              if (users.length > 0) {
+                result[name] = users;
+              }
+            }
+
+            return new Response(JSON.stringify(result), {
+              status: 200, headers: {"Content-Type": "application/json"}
+            });
+          } catch (error) {
+            return new Response("获取用户列表失败: " + error.message, { status: 500 });
+          }
+        }
+
+        case "global-kick": {
+          const userName = url.searchParams.get("name");
+          if (!userName) return new Response("请提供用户名", { status: 400 });
+
+          try {
+            let registryId = env.registry.idFromName("global");
+            let registryStub = env.registry.get(registryId);
+            let roomsResponse = await registryStub.fetch(new URL("https://dummy-url/list"));
+            let rooms = await roomsResponse.json();
+
+            let kickedFrom = [];
+            for (let [name] of Object.entries(rooms)) {
+              let id;
+              if (name.match(/^[0-9a-f]{64}$/)) {
+                id = env.rooms.idFromString(name);
+              } else if (name.length <= 32) {
+                id = env.rooms.idFromName(name);
+              } else continue;
+
+              let roomObject = env.rooms.get(id);
+              let doUrl = "https://dummy-url/do-kick?name=" + encodeURIComponent(userName);
+              let response = await roomObject.fetch(new URL(doUrl));
+              if (response.ok) {
+                kickedFrom.push(name);
+              }
+            }
+
+            return new Response(JSON.stringify({kickedFrom}), {
+              status: 200, headers: {"Content-Type": "application/json"}
+            });
+          } catch (error) {
+            return new Response("全局踢出失败: " + error.message, { status: 500 });
+          }
+        }
+
         case "blacklist": {
           const action = path[2]; // add, remove, list
           const roomId = path[3];
