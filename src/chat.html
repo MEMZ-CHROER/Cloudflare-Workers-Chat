@@ -437,16 +437,18 @@ function startRoomList() {
     startChat();
   });
 
-  // 监听回车键
-  document.querySelector("#room-list-form").addEventListener("submit", event => {
-    event.preventDefault();
-    roomname = roomNameInput.value;
-    if (roomname.length > 0) {
-      startChat();
+  roomNameInput.focus();
+
+  // 回车键触发进入
+  roomNameInput.addEventListener("keydown", event => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      roomname = roomNameInput.value;
+      if (roomname.length > 0) {
+        startChat();
+      }
     }
   });
-
-  roomNameInput.focus();
 
   // 加载房间列表
   loadRoomList();
