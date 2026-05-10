@@ -193,6 +193,11 @@ async function handleApiRequest(path, request, env) {
       // ===========================================================================================
 
       switch (path[1]) {
+        case "verify": {
+          // 单纯的密钥验证接口
+          return new Response("ok", { status: 200 });
+        }
+
         case "clear-room": {
           // 允许 GET 请求清空房间聊天记录
           const roomId = path[2]; // 获取房间名称或 ID

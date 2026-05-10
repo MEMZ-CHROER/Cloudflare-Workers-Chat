@@ -194,8 +194,8 @@ if (adminKey) {
 document.querySelector("#login-btn").addEventListener("click", () => {
   adminKey = document.querySelector("#admin-key").value;
   if (!adminKey) return;
-  // 验证密钥（通过调用一个需要密钥的 API 来测试）
-  fetch("/api/admin/clear-rate-limits?key=" + encodeURIComponent(adminKey) + "&ip=0.0.0.0")
+  // 验证密钥
+  fetch("/api/admin/verify?key=" + encodeURIComponent(adminKey))
     .then(r => {
       if (r.status === 401) throw new Error("密钥错误");
       localStorage.setItem("admin_key", adminKey);
