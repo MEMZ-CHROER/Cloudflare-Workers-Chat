@@ -414,7 +414,9 @@ async function loadHistoryUsers() {
       let userTag = tagMap[user] || '';
       let tagHtml = userTag
         ? '<span class="tag-badge">' + escapeHtml(userTag) + '</span>'
-        : '';
+            + '<button class="tag-remove-btn" onclick="removeTag(\'' + user.replace(/'/g, "\\'") + '\')">✕</button>'
+        : '<input class="tag-input" id="tag-input-' + user.replace(/[^a-zA-Z0-9_-]/g, '_') + '" placeholder="标签" maxlength="10">'
+            + '<button class="tag-set-btn" onclick="setTag(\'' + user.replace(/'/g, "\\'") + '\')">设置</button>';
       let isBanned = bannedList.includes(user);
 
       html += '<div class="history-user-item">' +
