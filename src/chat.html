@@ -459,6 +459,12 @@ let username;
 let roomname;
 let roomListInterval = null;
 
+const TAG_COLORS = {
+  red: "#e74c3c", blue: "#3498db", green: "#2ecc71",
+  purple: "#9b59b6", pink: "#e91e63", cyan: "#00bcd4",
+  gray: "#95a5a6", orange: "#e67e22"
+};
+
 let hostname = window.location.host;
 if (hostname == "") {
   // 可能是本地测试HTML文件
@@ -799,9 +805,6 @@ function join() {
       addChatMessage(null, "* " + data.system);
     } else if (data.joined) {
       let p = document.createElement("p");
-      let displayName = data.joined;
-      if (data.tag) displayName = "[" + data.tag + "] " + data.joined;
-      p.innerText = displayName;
       p.dataset.name = data.joined;
       p.style.cursor = "pointer";
       p.title = "点击踢出此用户";
@@ -810,6 +813,18 @@ function join() {
           currentWebSocket.send(JSON.stringify({type: "kick", target: data.joined}));
         }
       });
+      if (data.tag) {
+        let badge = document.createElement("span");
+        badge.className = "tag";
+        badge.textContent = data.tag;
+        if (data.tagColor && TAG_COLORS[data.tagColor]) {
+          badge.style.backgroundColor = TAG_COLORS[data.tagColor];
+        }
+        p.appendChild(badge);
+        p.appendChild(document.createTextNode(" " + data.joined));
+      } else {
+        p.textContent = data.joined;
+      }
       roster.appendChild(p);
       if (wroteWelcomeMessages) {
         let joinText = "* " + data.joined + " 进入了聊天室";
@@ -859,7 +874,7 @@ function join() {
     } else if (data.type === "image") {
       // 图片消息
       if (data.timestamp > lastSeenTimestamp) {
-        addChatImage(data.name, data.data, data.tag);
+        addChatImage(data.name, data.data, data.tag, data.tagColor);
         lastSeenTimestamp = data.timestamp;
       }
     } else if (data.type === "room-cleared") {
@@ -870,17 +885,27 @@ function join() {
       // 标签已更新，刷新在线列表显示
       for (let child of roster.childNodes) {
         if ((child.dataset.name || child.innerText) == data.name) {
-          let displayName = data.name;
-          if (data.tag) displayName = "[" + data.tag + "] " + data.name;
-          child.innerText = displayName;
+          child.innerHTML = "";
           child.dataset.name = data.name;
+          if (data.tag) {
+            let badge = document.createElement("span");
+            badge.className = "tag";
+            badge.textContent = data.tag;
+            if (data.tagColor && TAG_COLORS[data.tagColor]) {
+              badge.style.backgroundColor = TAG_COLORS[data.tagColor];
+            }
+            child.appendChild(badge);
+            child.appendChild(document.createTextNode(" " + data.name));
+          } else {
+            child.textContent = data.name;
+          }
           break;
         }
       }
     } else {
       // 常规聊天消息
       if (data.timestamp > lastSeenTimestamp) {
-        addChatMessage(data.name, data.message, data.tag);
+        addChatMessage(data.name, data.message, data.tag, data.tagColor);
         lastSeenTimestamp = data.timestamp;
       }
     }
@@ -904,13 +929,16 @@ function join() {
   });
 }
 
-function addChatMessage(name, text, tag) {
+function addChatMessage(name, text, tag, tagColor) {
   let p = document.createElement("p");
   if (name) {
     if (tag) {
       let badge = document.createElement("span");
       badge.className = "tag";
       badge.textContent = tag;
+      if (tagColor && TAG_COLORS[tagColor]) {
+        badge.style.backgroundColor = TAG_COLORS[tagColor];
+      }
       p.appendChild(badge);
     }
     let span = document.createElement("span");
@@ -924,13 +952,16 @@ function addChatMessage(name, text, tag) {
   chatlog.scrollBy(0, 1e8);
 }
 
-function addChatImage(name, data, tag) {
+function addChatImage(name, data, tag, tagColor) {
   let p = document.createElement("p");
   if (name) {
     if (tag) {
       let badge = document.createElement("span");
       badge.className = "tag";
       badge.textContent = tag;
+      if (tagColor && TAG_COLORS[tagColor]) {
+        badge.style.backgroundColor = TAG_COLORS[tagColor];
+      }
       p.appendChild(badge);
     }
     let span = document.createElement("span");
@@ -953,7 +984,7 @@ async function handleCommand(text) {
 
   switch (cmd) {
     case "/help":
-      addChatMessage(null, "* 可用命令: /kick <用户> 踢出 | /ban <用户> 封禁 | /unban <用户> 解封 | /tag <用户> <标签> 设置标签 | /untag <用户> 移除标签 | /clear 清空 | /help 帮助");
+      addChatMessage(null, "* 可用命令: /kick <用户> 踢出 | /ban <用户> 封禁 | /unban <用户> 解封 | /tag <用户> <标签> [颜色] 设置标签 | /untag <用户> 移除标签 | /clear 清空 | /help 帮助");
       break;
 
     case "/kick": {
@@ -1002,12 +1033,15 @@ async function handleCommand(text) {
     case "/tag": {
       let parts = text.split(/\s+/);
       let targetUser = parts[1];
-      let tagValue = parts.slice(2).join(" ");
-      if (!targetUser || !tagValue) { addChatMessage(null, "* 用法: /tag <用户名> <标签>"); break; }
+      let tagValue = parts[2];
+      let tagColor = parts[3] || "";
+      if (!targetUser || !tagValue) { addChatMessage(null, "* 用法: /tag <用户名> <标签> [颜色]"); break; }
       let adminKey = localStorage.getItem("admin_key");
       if (!adminKey) { addChatMessage(null, "* 错误: 请先登录管理后台（访问 /admin）"); break; }
       try {
-        let r = await fetch("/api/admin/tag/set?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(targetUser) + "&tag=" + encodeURIComponent(tagValue));
+        let url = "/api/admin/tag/set?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(targetUser) + "&tag=" + encodeURIComponent(tagValue);
+        if (tagColor) url += "&color=" + encodeURIComponent(tagColor);
+        let r = await fetch(url);
         let t = await r.text();
         addChatMessage(null, "* " + t);
       } catch (e) {
