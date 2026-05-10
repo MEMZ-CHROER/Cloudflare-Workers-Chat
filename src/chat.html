@@ -35,6 +35,16 @@ body {
 #chatlog span.username {
   font-weight: bold;
 }
+#chatlog span.tag {
+  display: inline-block;
+  font-size: 80%;
+  font-weight: bold;
+  color: #fff;
+  background: #e68a2e;
+  padding: 0 5px;
+  border-radius: 3px;
+  margin-right: 2px;
+}
 #spacer {
   height: calc(100vh - 32px - 5em);
 }
@@ -61,13 +71,135 @@ p:last-of-type {
   border-left: none;
 }
 
-::-webkit-scrollbar {
-  display: none;
+@media(max-width:600px) {
+  #chatlog { right: 0; }
+
+  #roster {
+    display: none;
+    position: fixed;
+    right: 0;
+    top: 0;
+    bottom: 32px;
+    width: 200px;
+    z-index: 10;
+    background: #fff;
+    border-left: 1px solid #ccc;
+    box-shadow: -2px 0 10px rgba(0,0,0,0.2);
+    padding: 40px 8px 8px;
+  }
+  #roster.show {
+    display: block;
+  }
+
+  #roster-backdrop {
+    display: none;
+    position: fixed;
+    z-index: 9;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.3);
+  }
+  #roster-backdrop.show {
+    display: block;
+  }
 }
 
+#roster-toggle {
+  display: none;
+  position: fixed;
+  right: 8px;
+  top: 8px;
+  z-index: 11;
+  width: 36px;
+  height: 36px;
+  font-size: 18px;
+  line-height: 36px;
+  text-align: center;
+  cursor: pointer;
+  background: #eee;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  user-select: none;
+}
 @media(max-width:600px) {
-  #roster { display: none; }
-  #chatlog { right: 0; }
+  #roster-toggle {
+    display: block;
+  }
+}
+
+#room-list-form {
+  position: fixed;
+  z-index: 2;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background-color: white;
+  overflow-y: auto;
+}
+#room-list-form h2 {
+  text-align: center;
+  font-size: 150%;
+  margin-top: 2em;
+  margin-bottom: 1em;
+}
+#room-list {
+  max-width: 400px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+.room-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.room-item:hover {
+  background: #f5f5f5;
+  border-color: #999;
+}
+.room-item .room-name {
+  font-weight: bold;
+  font-size: 110%;
+}
+.room-item .room-count {
+  color: #666;
+  font-size: 90%;
+}
+#room-list-form p {
+  text-align: center;
+  color: #999;
+  margin: 16px 0;
+}
+#show-room-form-btn {
+  display: block;
+  margin: 0 auto;
+  font-size: 120%;
+  border: 1px solid #bbb;
+  background-color: #eee;
+  padding: 8px 24px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+#show-room-form-btn:hover {
+  background-color: #ddd;
+}
+#room-list-loading,
+#room-list-empty,
+#room-list-error {
+  text-align: center;
+  padding: 40px 16px;
+  color: #999;
+}
+#room-list-error {
+  color: #c00;
 }
 
 #chat-input {
@@ -79,7 +211,85 @@ p:last-of-type {
   border: none;
   border-top: none;
   padding-left: 32px;
+  padding-right: 110px;
   outline: none;
+}
+#image-btn {
+  position: fixed;
+  z-index: 1;
+  bottom: 0;
+  right: 0;
+  width: auto;
+  padding: 0 8px;
+  height: 32px;
+  border: none;
+  background: none;
+  font-size: 14px;
+  line-height: 32px;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+  color: #555;
+}
+#image-btn:hover {
+  background: #eee;
+}
+#emoji-btn {
+  position: fixed;
+  z-index: 1;
+  bottom: 0;
+  right: 64px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: none;
+  font-size: 18px;
+  line-height: 32px;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+}
+#emoji-btn:hover {
+  background: #eee;
+}
+#emoji-panel {
+  display: none;
+  position: fixed;
+  z-index: 20;
+  bottom: 36px;
+  right: 4px;
+  width: 320px;
+  max-height: 240px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 -2px 12px rgba(0,0,0,0.15);
+  overflow-y: auto;
+  padding: 8px;
+}
+#emoji-panel.show {
+  display: block;
+}
+#emoji-panel .emoji-item {
+  display: inline-block;
+  width: 36px;
+  height: 36px;
+  line-height: 36px;
+  text-align: center;
+  font-size: 22px;
+  cursor: pointer;
+  border-radius: 4px;
+  user-select: none;
+}
+#emoji-panel .emoji-item:hover {
+  background: #f0f0f0;
+}
+#chatlog img {
+  max-width: 240px;
+  max-height: 240px;
+  border-radius: 6px;
+  display: block;
+  margin: 4px 0;
 }
 #chatroom::before {
   z-index: 1;
@@ -126,7 +336,8 @@ p:last-of-type {
   text-align: center;
 }
 
-#room-form {
+#room-form,
+#room-list-form {
   position: fixed;
   z-index: 2;
   top: 0;
@@ -134,9 +345,13 @@ p:last-of-type {
   left: 0;
   right: 0;
   background-color: white;
-  font-size: 200%;
-  margin-top: calc(50vh - 3em);
   text-align: center;
+  overflow-y: auto;
+}
+
+#room-list-form {
+  font-size: 150%;
+  padding: 40px 16px;
 }
 
 #room-name {
@@ -147,19 +362,30 @@ p:last-of-type {
   padding-left: 1em;
 }
 
-#room-form button {
+#room-form button,
+#room-list-form button {
   font-size: inherit;
   border: 1px solid #bbb;
   background-color: #eee;
   height: 2em;
+  cursor: pointer;
+}
+
+#room-list-header {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #ddd;
+  font-weight: bold;
+  font-size: 90%;
+  color: #666;
 }
 
 @media(max-width:660px) {
-  #name-input, #room-form { font-size: 150%; }
+  #name-input, #room-form, #room-list-form { font-size: 150%; }
   #name-form p { font-size: 75%; }
 }
 @media(max-width:500px) {
-  #name-input, #room-form { font-size: 100%; }
+  #name-input, #room-form, #room-list-form { font-size: 100%; }
   #name-form p { font-size: 50%; }
 }
 
@@ -184,18 +410,28 @@ p:last-of-type {
         <br>由
         <a href="https://blog.cloudflare.com/introducing-workers-durable-objects" target="_blank">Cloudflare Workers Durable Objects</a>提供技术支持</p>
     </form>
-    <form id="room-form" action="/fake-form-action">
+    <div id="room-list-form" style="display:none">
       <p>输入公共房间名称：</p>
       <input id="room-name" placeholder="房间名称"><button id="go-public">进入 &raquo;</button>
       <p>或</p>
       <button id="go-private">创建私人房间 &raquo;</button>
-    </form>
+      <div id="room-list-header">已有房间</div>
+      <div id="room-list">
+        <div id="room-list-loading">加载中...</div>
+      </div>
+    </div>
     <form id="chatroom" action="/fake-form-action">
       <div id="chatlog">
         <div id="spacer"></div>
       </div>
       <div id="roster"></div>
+      <div id="roster-backdrop"></div>
+      <div id="roster-toggle">&#128101;</div>
       <input id="chat-input" placeholder="输入消息...">
+      <button id="emoji-btn" type="button">😊</button>
+      <div id="emoji-panel"></div>
+      <button id="image-btn" type="button">发送图片</button>
+      <input type="file" id="image-picker" accept="image/*" style="display:none">
     </form>
   </body>
 
@@ -221,6 +457,7 @@ let isAtBottom = true;
 
 let username;
 let roomname;
+let roomListInterval = null;
 
 let hostname = window.location.host;
 if (hostname == "") {
@@ -233,7 +470,7 @@ function startNameChooser() {
     event.preventDefault();
     username = nameInput.value;
     if (username.length > 0) {
-      startRoomChooser();
+      startRoomList();
     }
   });
 
@@ -246,29 +483,25 @@ function startNameChooser() {
   nameInput.focus();
 }
 
-function startRoomChooser() {
-  nameForm.remove();
+function startRoomList() {
+  nameForm.style.display = "none";
+  document.querySelector("#room-list-form").style.display = "block";
 
+  // 如果 URL 有 hash，直接进入聊天
   if (document.location.hash.length > 1) {
     roomname = document.location.hash.slice(1);
     startChat();
     return;
   }
 
-  roomForm.addEventListener("submit", event => {
-    event.preventDefault();
-    roomname = roomNameInput.value;
-    if (roomname.length > 0) {
-      startChat();
-    }
-  });
-
+  // 房间名输入事件
   roomNameInput.addEventListener("input", event => {
     if (event.currentTarget.value.length > 32) {
       event.currentTarget.value = event.currentTarget.value.slice(0, 32);
     }
   });
 
+  // 公共房间按钮
   goPublicButton.addEventListener("click", event => {
     roomname = roomNameInput.value;
     if (roomname.length > 0) {
@@ -276,6 +509,7 @@ function startRoomChooser() {
     }
   });
 
+  // 创建私人房间
   goPrivateButton.addEventListener("click", async event => {
     roomNameInput.disabled = true;
     goPublicButton.disabled = true;
@@ -293,10 +527,62 @@ function startRoomChooser() {
   });
 
   roomNameInput.focus();
+
+  // 回车键触发进入
+  roomNameInput.addEventListener("keydown", event => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      roomname = roomNameInput.value;
+      if (roomname.length > 0) {
+        startChat();
+      }
+    }
+  });
+
+  // 加载房间列表
+  loadRoomList();
+  // 每5秒刷新房间列表的在线人数
+  roomListInterval = setInterval(loadRoomList, 5000);
+}
+
+async function loadRoomList() {
+  let container = document.querySelector("#room-list");
+  container.innerHTML = '<div id="room-list-loading">加载中...</div>';
+
+  try {
+    let response = await fetch("/api/rooms/list");
+    if (!response.ok) throw new Error("请求失败");
+    let rooms = await response.json();
+    let entries = Object.entries(rooms);
+
+    if (entries.length === 0) {
+      container.innerHTML = '<div id="room-list-empty">暂无公开房间</div>';
+      return;
+    }
+
+    container.innerHTML = "";
+    entries.forEach(([name, count]) => {
+      let div = document.createElement("div");
+      div.className = "room-item";
+      div.innerHTML = '<span class="room-name">#' + name + '</span><span class="room-count">&#128101; ' + count + ' 在线</span>';
+      div.addEventListener("click", () => {
+        roomname = name;
+        startChat();
+      });
+      container.appendChild(div);
+    });
+  } catch (err) {
+    container.innerHTML = '<div id="room-list-error">加载房间列表失败</div>';
+  }
 }
 
 function startChat() {
-  roomForm.remove();
+  if (roomListInterval) {
+    clearInterval(roomListInterval);
+    roomListInterval = null;
+  }
+  if (roomForm) roomForm.remove();
+  document.querySelector("#room-list-form").style.display = "none";
 
   // 对房间名称进行规范化处理
   roomname = roomname.replace(/[^a-zA-Z0-9_-]/g, "").replace(/_/g, "-").toLowerCase();
@@ -328,8 +614,16 @@ function startChat() {
     event.preventDefault();
 
     if (currentWebSocket) {
-      currentWebSocket.send(JSON.stringify({message: chatInput.value}));
+      let text = chatInput.value;
       chatInput.value = "";
+
+      // 检查是否是指令
+      if (text.startsWith("/")) {
+        handleCommand(text);
+        return;
+      }
+
+      currentWebSocket.send(JSON.stringify({message: text}));
 
       // 发送消息时自动滚动到底部
       chatlog.scrollBy(0, 1e8);
@@ -362,6 +656,97 @@ function startChat() {
       }
     });
   }
+
+  // 移动端用户列表切换
+  let rosterToggle = document.querySelector("#roster-toggle");
+  let rosterBackdrop = document.querySelector("#roster-backdrop");
+  let rosterPanel = document.querySelector("#roster");
+  function hideRoster() {
+    rosterPanel.classList.remove("show");
+    rosterBackdrop.classList.remove("show");
+  }
+  rosterToggle.addEventListener("click", event => {
+    event.stopPropagation();
+    rosterPanel.classList.toggle("show");
+    rosterBackdrop.classList.toggle("show");
+  });
+  rosterBackdrop.addEventListener("click", hideRoster);
+  document.body.addEventListener("click", event => {
+    if (!rosterPanel.contains(event.target) && !rosterToggle.contains(event.target)) {
+      hideRoster();
+    }
+  });
+
+  // 图片发送
+  let imagePicker = document.querySelector("#image-picker");
+  document.querySelector("#image-btn").addEventListener("click", () => {
+    imagePicker.click();
+  });
+  imagePicker.addEventListener("change", async () => {
+    let file = imagePicker.files[0];
+    if (!file || !currentWebSocket) return;
+
+    let img = await createImageBitmap(file);
+    let maxSize = 800;
+    let w = img.width, h = img.height;
+    if (w > maxSize || h > maxSize) {
+      if (w > h) { h = h * maxSize / w; w = maxSize; }
+      else { w = w * maxSize / h; h = maxSize; }
+    }
+    let canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    let ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0, w, h);
+    let base64 = canvas.toDataURL("image/jpeg", 0.7);
+    img.close();
+
+    currentWebSocket.send(JSON.stringify({type: "image", data: base64}));
+    imagePicker.value = "";
+  });
+
+  // 表情包
+  const EMOJIS = [
+    "😀", "😂", "🤣", "😃", "😄", "😅", "😆", "😉", "😊", "😋",
+    "😎", "😍", "🥰", "😘", "🤗", "🤩", "🤔", "🤨", "😐", "😑",
+    "😶", "🙄", "😏", "😣", "😥", "😮", "🤐", "😯", "😪", "😫",
+    "😴", "😌", "😛", "😜", "😝", "🤤", "😒", "😓", "😔", "😕",
+    "🙃", "🤑", "😲", "☹️", "🙁", "😖", "😞", "😟", "😤", "😢",
+    "😭", "😦", "😧", "😨", "😩", "🤯", "😬", "😰", "😱", "🥵",
+    "🥶", "😳", "🤪", "😵", "😡", "😠", "🤬",
+    "👍", "👎", "👌", "✌️", "🤞", "🤟", "🤘", "🤙", "👋", "🤚",
+    "✋", "🖐️", "🖖", "👏", "🙌", "🤲", "🤝", "🙏", "✍️", "💪",
+    "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💕",
+    "💞", "💓", "💗", "💖", "💘", "💝", "💋", "👀", "🔥", "⭐",
+    "🎉", "🎊", "🎈", "🎁", "✨", "🌟", "💡", "📌", "✅", "❌"
+  ];
+  let emojiPanel = document.querySelector("#emoji-panel");
+  // 填充表情
+  EMOJIS.forEach(e => {
+    let span = document.createElement("span");
+    span.className = "emoji-item";
+    span.textContent = e;
+    span.title = e;
+    span.addEventListener("click", () => {
+      if (currentWebSocket) {
+        currentWebSocket.send(JSON.stringify({message: e}));
+        chatlog.scrollBy(0, 1e8);
+      }
+      emojiPanel.classList.remove("show");
+    });
+    emojiPanel.appendChild(span);
+  });
+  // 切换表情面板
+  document.querySelector("#emoji-btn").addEventListener("click", event => {
+    event.stopPropagation();
+    emojiPanel.classList.toggle("show");
+  });
+  // 点击面板外关闭
+  document.body.addEventListener("click", () => {
+    emojiPanel.classList.remove("show");
+  }, false);
+  emojiPanel.addEventListener("click", event => {
+    event.stopPropagation();
+  });
 
   join();
 }
@@ -410,17 +795,42 @@ function join() {
 
     if (data.error) {
       addChatMessage(null, "* 错误: " + data.error);
+    } else if (data.system) {
+      addChatMessage(null, "* " + data.system);
     } else if (data.joined) {
       let p = document.createElement("p");
-      p.innerText = data.joined;
+      let displayName = data.joined;
+      if (data.tag) displayName = "[" + data.tag + "] " + data.joined;
+      p.innerText = displayName;
+      p.dataset.name = data.joined;
+      p.style.cursor = "pointer";
+      p.title = "点击踢出此用户";
+      p.addEventListener("click", () => {
+        if (currentWebSocket && confirm("确定要踢出「" + data.joined + "」吗？")) {
+          currentWebSocket.send(JSON.stringify({type: "kick", target: data.joined}));
+        }
+      });
       roster.appendChild(p);
+      if (wroteWelcomeMessages) {
+        let joinText = "* " + data.joined + " 进入了聊天室";
+        if (data.tag) joinText = "* [" + data.tag + "]" + data.joined + " 进入了聊天室";
+        addChatMessage(null, joinText);
+      }
     } else if (data.quit) {
       for (let child of roster.childNodes) {
-        if (child.innerText == data.quit) {
+        if ((child.dataset.name || child.innerText) == data.quit) {
           roster.removeChild(child);
           break;
         }
       }
+    } else if (data.kicked) {
+      for (let child of roster.childNodes) {
+        if ((child.dataset.name || child.innerText) == data.kicked) {
+          roster.removeChild(child);
+          break;
+        }
+      }
+      addChatMessage(null, "* " + data.kicked + " 已被踢出房间");
     } else if (data.ready) {
       // 所有加入前的消息都已传送完毕
       if (!wroteWelcomeMessages) {
@@ -444,11 +854,33 @@ function join() {
           addChatMessage(null,
               "* 欢迎来到 #" + roomname + " 房间！打个招呼吧！");
         }
+        chatlog.scrollBy(0, 1e8);
+      }
+    } else if (data.type === "image") {
+      // 图片消息
+      if (data.timestamp > lastSeenTimestamp) {
+        addChatImage(data.name, data.data, data.tag);
+        lastSeenTimestamp = data.timestamp;
+      }
+    } else if (data.type === "room-cleared") {
+      // 聊天室已被管理员清空，刷新页面
+      addChatMessage(null, "* 聊天记录已被管理员清空，即将刷新...");
+      setTimeout(() => document.location.reload(), 1500);
+    } else if (data.type === "tag-update") {
+      // 标签已更新，刷新在线列表显示
+      for (let child of roster.childNodes) {
+        if ((child.dataset.name || child.innerText) == data.name) {
+          let displayName = data.name;
+          if (data.tag) displayName = "[" + data.tag + "] " + data.name;
+          child.innerText = displayName;
+          child.dataset.name = data.name;
+          break;
+        }
       }
     } else {
       // 常规聊天消息
       if (data.timestamp > lastSeenTimestamp) {
-        addChatMessage(data.name, data.message);
+        addChatMessage(data.name, data.message, data.tag);
         lastSeenTimestamp = data.timestamp;
       }
     }
@@ -456,29 +888,167 @@ function join() {
 
   ws.addEventListener("close", event => {
     console.log("WebSocket连接关闭，正在重新连接:", event.code, event.reason);
+    if (event.reason === "kicked") {
+      addChatMessage(null, "* 你已被踢出房间");
+      return;
+    }
     rejoin();
   });
   ws.addEventListener("error", event => {
     console.log("WebSocket错误，正在重新连接:", event);
+    if (event.reason === "kicked") {
+      addChatMessage(null, "* 你已被踢出房间");
+      return;
+    }
     rejoin();
   });
 }
 
-function addChatMessage(name, text) {
+function addChatMessage(name, text, tag) {
   let p = document.createElement("p");
   if (name) {
-    let tag = document.createElement("span");
-    tag.className = "username";
-    tag.innerText = name + ": ";
-    p.appendChild(tag);
+    if (tag) {
+      let badge = document.createElement("span");
+      badge.className = "tag";
+      badge.textContent = tag;
+      p.appendChild(badge);
+    }
+    let span = document.createElement("span");
+    span.className = "username";
+    span.innerText = name + ": ";
+    p.appendChild(span);
   }
   p.appendChild(document.createTextNode(text));
 
-  // 添加新的聊天行，确保如果聊天记录之前已滚动到底部，
-  // 则保持底部位置，否则不改变滚动位置
   chatlog.appendChild(p);
-  if (isAtBottom) {
-    chatlog.scrollBy(0, 1e8);
+  chatlog.scrollBy(0, 1e8);
+}
+
+function addChatImage(name, data, tag) {
+  let p = document.createElement("p");
+  if (name) {
+    if (tag) {
+      let badge = document.createElement("span");
+      badge.className = "tag";
+      badge.textContent = tag;
+      p.appendChild(badge);
+    }
+    let span = document.createElement("span");
+    span.className = "username";
+    span.innerText = name + ": ";
+    p.appendChild(span);
+  }
+  let img = document.createElement("img");
+  img.src = data;
+  img.alt = "图片";
+  p.appendChild(img);
+  chatlog.appendChild(p);
+  chatlog.scrollBy(0, 1e8);
+}
+
+async function handleCommand(text) {
+  let parts = text.split(/\s+/);
+  let cmd = parts[0].toLowerCase();
+  let arg = parts.slice(1).join(" ");
+
+  switch (cmd) {
+    case "/help":
+      addChatMessage(null, "* 可用命令: /kick <用户> 踢出 | /ban <用户> 封禁 | /unban <用户> 解封 | /tag <用户> <标签> 设置标签 | /untag <用户> 移除标签 | /clear 清空 | /help 帮助");
+      break;
+
+    case "/kick": {
+      if (!arg) { addChatMessage(null, "* 用法: /kick <用户名>"); break; }
+      let adminKey = localStorage.getItem("admin_key");
+      if (!adminKey) { addChatMessage(null, "* 错误: 请先登录管理后台（访问 /admin）"); break; }
+      try {
+        let r = await fetch("/api/admin/kick-user/" + encodeURIComponent(roomname) + "?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(arg));
+        let t = await r.text();
+        addChatMessage(null, "* " + t);
+      } catch (e) {
+        addChatMessage(null, "* 操作失败: " + e.message);
+      }
+      break;
+    }
+
+    case "/ban": {
+      if (!arg) { addChatMessage(null, "* 用法: /ban <用户名>"); break; }
+      let adminKey = localStorage.getItem("admin_key");
+      if (!adminKey) { addChatMessage(null, "* 错误: 请先登录管理后台（访问 /admin）"); break; }
+      try {
+        await fetch("/api/admin/global-kick?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(arg));
+        let r = await fetch("/api/admin/ban/add?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(arg));
+        let t = await r.text();
+        addChatMessage(null, "* " + t);
+      } catch (e) {
+        addChatMessage(null, "* 操作失败: " + e.message);
+      }
+      break;
+    }
+
+    case "/unban": {
+      if (!arg) { addChatMessage(null, "* 用法: /unban <用户名>"); break; }
+      let adminKey = localStorage.getItem("admin_key");
+      if (!adminKey) { addChatMessage(null, "* 错误: 请先登录管理后台（访问 /admin）"); break; }
+      try {
+        let r = await fetch("/api/admin/ban/remove?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(arg));
+        let t = await r.text();
+        addChatMessage(null, "* " + t);
+      } catch (e) {
+        addChatMessage(null, "* 操作失败: " + e.message);
+      }
+      break;
+    }
+
+    case "/tag": {
+      let parts = text.split(/\s+/);
+      let targetUser = parts[1];
+      let tagValue = parts.slice(2).join(" ");
+      if (!targetUser || !tagValue) { addChatMessage(null, "* 用法: /tag <用户名> <标签>"); break; }
+      let adminKey = localStorage.getItem("admin_key");
+      if (!adminKey) { addChatMessage(null, "* 错误: 请先登录管理后台（访问 /admin）"); break; }
+      try {
+        let r = await fetch("/api/admin/tag/set?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(targetUser) + "&tag=" + encodeURIComponent(tagValue));
+        let t = await r.text();
+        addChatMessage(null, "* " + t);
+      } catch (e) {
+        addChatMessage(null, "* 操作失败: " + e.message);
+      }
+      break;
+    }
+
+    case "/untag": {
+      let parts = text.split(/\s+/);
+      let targetUser = parts[1];
+      if (!targetUser) { addChatMessage(null, "* 用法: /untag <用户名>"); break; }
+      let adminKey = localStorage.getItem("admin_key");
+      if (!adminKey) { addChatMessage(null, "* 错误: 请先登录管理后台（访问 /admin）"); break; }
+      try {
+        let r = await fetch("/api/admin/tag/remove?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(targetUser));
+        let t = await r.text();
+        addChatMessage(null, "* " + t);
+      } catch (e) {
+        addChatMessage(null, "* 操作失败: " + e.message);
+      }
+      break;
+    }
+
+    case "/clear": {
+      let adminKey = localStorage.getItem("admin_key");
+      if (!adminKey) { addChatMessage(null, "* 错误: 请先登录管理后台（访问 /admin）"); break; }
+      if (!confirm("确定清空 " + roomname + " 的聊天记录吗？")) break;
+      try {
+        let r = await fetch("/api/admin/clear-room/" + encodeURIComponent(roomname) + "?key=" + encodeURIComponent(adminKey));
+        let t = await r.text();
+        addChatMessage(null, "* " + t + " 即将刷新聊天室...");
+        setTimeout(() => document.location.reload(), 1500);
+      } catch (e) {
+        addChatMessage(null, "* 操作失败: " + e.message);
+      }
+      break;
+    }
+
+    default:
+      addChatMessage(null, "* 未知命令: " + cmd + "，输入 /help 查看可用命令");
   }
 }
 
