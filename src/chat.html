@@ -751,6 +751,10 @@ function join() {
         addChatImage(data.name, data.data);
         lastSeenTimestamp = data.timestamp;
       }
+    } else if (data.type === "room-cleared") {
+      // 聊天室已被管理员清空，刷新页面
+      addChatMessage(null, "* 聊天记录已被管理员清空，即将刷新...");
+      setTimeout(() => document.location.reload(), 1500);
     } else {
       // 常规聊天消息
       if (data.timestamp > lastSeenTimestamp) {
