@@ -67,6 +67,7 @@ async function handleErrors(request, func) {
  * @property {DurableObjectNamespace} rooms
  * @property {DurableObjectNamespace} limiters
  * @property {string} ADMIN_SECRET_KEY
+ * @property {DurableObjectNamespace} registry
  */
 
 // 使用 `export default` 导出主要的 fetch 事件处理器
@@ -108,6 +109,24 @@ async function handleApiRequest(path, request, env) {
   const url = new URL(request.url);
 
   switch (path[0]) {
+    case "rooms": {
+      if (path[1] === "list") {
+        // 返回所有房间及在线人数
+        try {
+          let registryId = env.registry.idFromName("global");
+          let registryStub = env.registry.get(registryId);
+          let response = await registryStub.fetch(new URL("https://dummy-url/list"));
+          let data = await response.json();
+          return new Response(JSON.stringify(data), {
+            headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}
+          });
+        } catch (error) {
+          return new Response(JSON.stringify({error: error.message}), {status: 500});
+        }
+      }
+      return new Response("未找到", {status: 404});
+    }
+
     case "room": {
       // 处理 `/api/room/...` 请求
       if (!path[1]) {
@@ -139,6 +158,7 @@ async function handleApiRequest(path, request, env) {
       // 构造新的 URL 并转发请求
       let newUrl = new URL(request.url);
       newUrl.pathname = "/" + path.slice(2).join("/");
+      newUrl.searchParams.set("room_name", name);
 
       return roomObject.fetch(newUrl, request);
     }
@@ -323,6 +343,11 @@ export class ChatRoom {
     return await handleErrors(request, async () => {
       let url = new URL(request.url);
 
+      // 提取并存储房间名（来自主 Worker 转发时设置的参数）
+      if (!this.roomName) {
+        this.roomName = url.searchParams.get("room_name");
+      }
+
       switch (url.pathname) {
         case "/websocket": {
           // 处理 WebSocket 连接请求
@@ -419,6 +444,25 @@ export class ChatRoom {
     backlog.forEach(value => {
       session.blockedMessages.push(value);
     });
+
+    // 通知 Registry 房间存在并更新人数
+    this.updateRegistry();
+  }
+
+  // 通知 RoomRegistry 更新当前房间的在线人数
+  async updateRegistry() {
+    if (!this.roomName || !this.env.registry) return;
+    try {
+      let registryId = this.env.registry.idFromName("global");
+      let stub = this.env.registry.get(registryId);
+      let count = 0;
+      for (let s of this.sessions.values()) {
+        if (s.name) count++;
+      }
+      await stub.fetch("https://dummy-url/update?name=" + encodeURIComponent(this.roomName) + "&count=" + count);
+    } catch (e) {
+      // Registry 更新是尽力而为的，失败不影响聊天功能
+    }
   }
 
   // 处理 WebSocket 消息
@@ -463,6 +507,8 @@ export class ChatRoom {
 
         // 广播用户加入消息
         this.broadcast({joined: session.name});
+
+        this.updateRegistry();
 
         webSocket.send(JSON.stringify({ready: true}));
         return;
@@ -539,6 +585,7 @@ export class ChatRoom {
     if (session.name) {
       this.broadcast({quit: session.name});
     }
+    this.updateRegistry();
   }
 
   async webSocketClose(webSocket, code, reason, wasClean) {
@@ -644,6 +691,69 @@ export class RateLimiter {
     await this.storage.delete("nextAllowedTime"); // 删除特定键
     this.nextAllowedTime = 0; // 重置内存中的值
     console.log(`RateLimiter ID: ${this.state.id} - 速率限制已清空。`);
+  }
+}
+
+// =======================================================================================
+// RoomRegistry Durable Object 类
+
+// RoomRegistry 是一个全局单例，用于跟踪所有房间及其在线人数
+export class RoomRegistry {
+  constructor(state, env) {
+    this.state = state;
+    this.storage = state.storage;
+    this.rooms = new Map(); // name -> { count }
+    this.load();
+  }
+
+  async load() {
+    let data = await this.storage.get("rooms");
+    if (data) {
+      this.rooms = new Map(data);
+    }
+  }
+
+  async save() {
+    await this.storage.put("rooms", [...this.rooms]);
+  }
+
+  async fetch(request) {
+    let url = new URL(request.url);
+
+    switch (url.pathname) {
+      case "/register": {
+        let name = url.searchParams.get("name");
+        if (!name) return new Response("请提供房间名", { status: 400 });
+        if (!this.rooms.has(name)) {
+          this.rooms.set(name, { count: 0 });
+        }
+        return new Response("ok");
+      }
+
+      case "/update": {
+        let name = url.searchParams.get("name");
+        let count = parseInt(url.searchParams.get("count"), 10);
+        if (!name) return new Response("请提供房间名", { status: 400 });
+        this.rooms.set(name, { count: count || 0 });
+        await this.save();
+        return new Response("ok");
+      }
+
+      case "/list": {
+        let result = {};
+        for (let [name, info] of this.rooms) {
+          if (info.count > 0) {
+            result[name] = info.count;
+          }
+        }
+        return new Response(JSON.stringify(result), {
+          headers: {"Content-Type": "application/json"}
+        });
+      }
+
+      default:
+        return new Response("未找到", { status: 404 });
+    }
   }
 }
 
