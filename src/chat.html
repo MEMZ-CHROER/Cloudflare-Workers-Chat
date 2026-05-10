@@ -209,16 +209,17 @@ p:last-of-type {
   z-index: 1;
   bottom: 0;
   right: 0;
-  width: 36px;
+  width: auto;
+  padding: 0 8px;
   height: 32px;
   border: none;
   background: none;
-  font-size: 18px;
+  font-size: 14px;
   line-height: 32px;
   text-align: center;
   cursor: pointer;
-  padding: 0;
   user-select: none;
+  color: #555;
 }
 #image-btn:hover {
   background: #eee;
@@ -367,7 +368,7 @@ p:last-of-type {
       <div id="roster-backdrop"></div>
       <div id="roster-toggle">&#128101;</div>
       <input id="chat-input" placeholder="输入消息...">
-      <button id="image-btn">&#x1F5BC;</button>
+      <button id="image-btn">发送图片</button>
       <input type="file" id="image-picker" accept="image/*" style="display:none">
     </form>
   </body>
