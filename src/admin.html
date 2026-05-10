@@ -300,8 +300,8 @@ async function loadGlobalUsers() {
       let tagHtml = tagText
         ? '<span class="tag-badge" ' + tagStyle + '>' + escapeHtml(tagText) + '</span>'
             + '<button class="tag-remove-btn" onclick="removeTag(\'' + user.replace(/'/g, "\\'") + '\')">✕</button>'
-        : '<input class="tag-input" id="tag-input-' + user.replace(/[^a-zA-Z0-9_-]/g, '_') + '" placeholder="标签" maxlength="10">'
-            + '<select class="tag-color-select" id="color-select-' + user.replace(/[^a-zA-Z0-9_-]/g, '_') + '">'
+        : '<input class="tag-input" placeholder="标签" maxlength="10">'
+            + '<select class="tag-color-select">'
             + '<option value="">默认</option>'
             + '<option value="red">红色</option>'
             + '<option value="blue">蓝色</option>'
@@ -312,7 +312,7 @@ async function loadGlobalUsers() {
             + '<option value="gray">灰色</option>'
             + '<option value="orange">橙色</option>'
             + '</select>'
-            + '<button class="tag-set-btn" onclick="setTag(\'' + user.replace(/'/g, "\\'") + '\')">设置</button>';
+            + '<button class="tag-set-btn" onclick="setTag(this, \'' + user.replace(/'/g, "\\'") + '\')">设置</button>';
       html += '<div class="global-user-item">' +
         '<span class="name">' + escapeHtml(user) + tagHtml + '</span>' +
         '<span class="rooms">房间: ' + rooms.map(r => '#' + r).join(', ') + '</span>' +
@@ -439,8 +439,8 @@ async function loadHistoryUsers() {
       let tagHtml = tagText
         ? '<span class="tag-badge" ' + tagStyle + '>' + escapeHtml(tagText) + '</span>'
             + '<button class="tag-remove-btn" onclick="removeTag(\'' + user.replace(/'/g, "\\'") + '\')">✕</button>'
-        : '<input class="tag-input" id="tag-input-' + user.replace(/[^a-zA-Z0-9_-]/g, '_') + '" placeholder="标签" maxlength="10">'
-            + '<select class="tag-color-select" id="color-select-' + user.replace(/[^a-zA-Z0-9_-]/g, '_') + '">'
+        : '<input class="tag-input" placeholder="标签" maxlength="10">'
+            + '<select class="tag-color-select">'
             + '<option value="">默认</option>'
             + '<option value="red">红色</option>'
             + '<option value="blue">蓝色</option>'
@@ -451,7 +451,7 @@ async function loadHistoryUsers() {
             + '<option value="gray">灰色</option>'
             + '<option value="orange">橙色</option>'
             + '</select>'
-            + '<button class="tag-set-btn" onclick="setTag(\'' + user.replace(/'/g, "\\'") + '\')">设置</button>';
+            + '<button class="tag-set-btn" onclick="setTag(this, \'' + user.replace(/'/g, "\\'") + '\')">设置</button>';
       let isBanned = bannedList.includes(user);
 
       html += '<div class="history-user-item">' +
@@ -475,12 +475,13 @@ async function loadHistoryUsers() {
 
 let expandedRoom = null;
 
-async function setTag(user) {
-  let input = document.querySelector('#tag-input-' + user.replace(/[^a-zA-Z0-9_-]/g, '_'));
+async function setTag(btn, user) {
+  let container = btn.parentNode;
+  let input = container.querySelector('.tag-input');
   if (!input) return;
   let tag = input.value.trim();
   if (!tag) { alert("请输入标签"); return; }
-  let colorSelect = document.querySelector('#color-select-' + user.replace(/[^a-zA-Z0-9_-]/g, '_'));
+  let colorSelect = container.querySelector('.tag-color-select');
   let color = colorSelect ? colorSelect.value : "";
   try {
     let r = await fetch("/api/admin/tag/set?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(user) + "&tag=" + encodeURIComponent(tag) + "&color=" + encodeURIComponent(color));
