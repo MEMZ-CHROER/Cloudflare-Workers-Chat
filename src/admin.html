@@ -110,6 +110,16 @@ body { font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 16px; back
 .global-user-item .rooms { color: #888; font-size: 90%; flex: 1; margin: 0 12px; }
 .global-user-item .kick-btn { padding: 4px 10px; border: 1px solid #e88; color: #c00; background: #fff; border-radius: 4px; cursor: pointer; font-size: 85%; white-space: nowrap; }
 .global-user-item .kick-btn:hover { background: #fee; }
+.global-user-item .ban-btn { padding: 4px 10px; border: 1px solid #e88; color: #c00; background: #fff; border-radius: 4px; cursor: pointer; font-size: 85%; white-space: nowrap; margin-left: 6px; }
+.global-user-item .ban-btn:hover { background: #fee; }
+
+#banned-users-section { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 16px; padding: 16px; }
+#banned-users-section h2 { font-size: 110%; margin: 0 0 12px 0; }
+.banned-user-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
+.banned-user-item:last-child { border-bottom: none; }
+.banned-user-item .name { font-weight: bold; }
+.banned-user-item .unban-btn { padding: 4px 10px; border: 1px solid #ccc; background: #fff; border-radius: 4px; cursor: pointer; font-size: 85%; }
+.banned-user-item .unban-btn:hover { background: #eee; }
 
 #loading { text-align: center; color: #888; padding: 40px; }
 </style>
@@ -136,6 +146,10 @@ body { font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 16px; back
     <h2>全局在线用户</h2>
     <div id="global-users-list">加载中...</div>
   </div>
+  <div id="banned-users-section">
+    <h2>被封禁用户</h2>
+    <div id="banned-users-list">加载中...</div>
+  </div>
 </div>
 
 <script>
@@ -146,6 +160,7 @@ if (adminKey) {
   document.querySelector("#admin-panel").style.display = "block";
   loadRooms();
   loadGlobalUsers();
+  loadBannedList();
 }
 
 document.querySelector("#login-btn").addEventListener("click", () => {
@@ -160,6 +175,7 @@ document.querySelector("#login-btn").addEventListener("click", () => {
       document.querySelector("#admin-panel").style.display = "block";
       loadRooms();
       loadGlobalUsers();
+      loadBannedList();
     })
     .catch(e => {
       document.querySelector("#login-error").style.display = "block";
@@ -236,7 +252,10 @@ async function loadGlobalUsers() {
       html += '<div class="global-user-item">' +
         '<span class="name">' + escapeHtml(user) + '</span>' +
         '<span class="rooms">房间: ' + rooms.map(r => '#' + r).join(', ') + '</span>' +
+        '<span>' +
         '<button class="kick-btn" onclick="globalKick(\'' + user.replace(/'/g, "\\'") + '\')">全局踢出</button>' +
+        '<button class="ban-btn" onclick="banUser(\'' + user.replace(/'/g, "\\'") + '\')">封禁</button>' +
+        '</span>' +
         '</div>';
     });
     container.innerHTML = html;
@@ -255,6 +274,53 @@ async function globalKick(user) {
     loadRooms();
   } catch (e) {
     alert("操作失败");
+  }
+}
+
+async function banUser(user) {
+  if (!confirm("确定封禁 " + user + " 吗？封禁后该用户无法加入任何聊天室。")) return;
+  try {
+    let r = await fetch("/api/admin/ban/add?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(user));
+    let text = await r.text();
+    alert(text);
+    loadBannedList();
+    loadGlobalUsers();
+  } catch (e) {
+    alert("操作失败");
+  }
+}
+
+async function unbanUser(user) {
+  if (!confirm("确定解封 " + user + " 吗？")) return;
+  try {
+    let r = await fetch("/api/admin/ban/remove?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(user));
+    let text = await r.text();
+    alert(text);
+    loadBannedList();
+  } catch (e) {
+    alert("操作失败");
+  }
+}
+
+async function loadBannedList() {
+  let container = document.querySelector("#banned-users-list");
+  try {
+    let r = await fetch("/api/admin/ban/list?key=" + encodeURIComponent(adminKey));
+    let banned = await r.json();
+    if (!Array.isArray(banned) || banned.length === 0) {
+      container.innerHTML = '<div style="color:#888;padding:8px 0">暂无被封禁用户</div>';
+      return;
+    }
+    let html = '';
+    banned.forEach(user => {
+      html += '<div class="banned-user-item">' +
+        '<span class="name">' + escapeHtml(user) + '</span>' +
+        '<button class="unban-btn" onclick="unbanUser(\'' + user.replace(/'/g, "\\'") + '\')">解封</button>' +
+        '</div>';
+    });
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = '<div style="color:#c00;padding:8px 0">加载失败: ' + e.message + '</div>';
   }
 }
 
@@ -309,6 +375,7 @@ async function loadRoomDetail(detail, name) {
         } else {
           html += '<button onclick="addBlacklist(\'' + name.replace(/'/g, "\\'") + '\', \'' + u.replace(/'/g, "\\'") + '\')">拉黑</button>';
         }
+        html += '<button class="ban-btn" onclick="banUser(\'' + u.replace(/'/g, "\\'") + '\')">封禁</button>';
         html += '</span></div>';
       });
     }
