@@ -217,7 +217,7 @@ async function handleApiRequest(path, request, env) {
                 let limiterObject = env.limiters.get(limiterId);
 
                 const clearResponse = await limiterObject.fetch(new URL("https://dummy-url/clear-limit"));
-                
+
                 if (clearResponse.ok) {
                   return new Response(`IP '${targetIp}' 的速率限制已清空。`, { status: 200 });
                 } else {
@@ -228,6 +228,46 @@ async function handleApiRequest(path, request, env) {
                 console.error("清空速率限制时发生错误:", error);
                 return new Response(`清空速率限制时发生内部错误: ${error.message}`, { status: 500 });
             }
+        }
+
+        case "blacklist": {
+          const action = path[2]; // add, remove, list
+          const roomId = path[3];
+
+          if (!roomId) {
+            return new Response("请提供房间名称或 ID。", { status: 400 });
+          }
+
+          let id;
+          if (roomId.match(/^[0-9a-f]{64}$/)) {
+            id = env.rooms.idFromString(roomId);
+          } else if (roomId.length <= 32) {
+            id = env.rooms.idFromName(roomId);
+          } else {
+            return new Response("房间名称/ID格式不正确或过长。", { status: 400 });
+          }
+
+          try {
+            let roomObject = env.rooms.get(id);
+            let doUrl = "https://dummy-url/blacklist/" + action;
+            if (action === "add" || action === "remove") {
+              const userName = url.searchParams.get("name");
+              if (!userName) {
+                return new Response("请提供用户名（?name=xxx）。", { status: 400 });
+              }
+              doUrl += "?name=" + encodeURIComponent(userName);
+            }
+
+            const response = await roomObject.fetch(new URL(doUrl));
+            const text = await response.text();
+            if (response.ok) {
+              return new Response(text, { status: 200 });
+            } else {
+              return new Response(text, { status: response.status });
+            }
+          } catch (error) {
+            return new Response("操作黑名单时发生错误: " + error.message, { status: 500 });
+          }
         }
 
         default:
@@ -268,6 +308,11 @@ export class ChatRoom {
     });
 
     this.lastTimestamp = 0;  // 最后看到的消息时间戳
+
+    this.blacklist = new Set();  // 黑名单用户列表
+    this.storage.get("blacklist").then(list => {
+      if (list) this.blacklist = new Set(list);
+    });
   }
 
   // 处理发送到此对象的 HTTP 请求
@@ -297,6 +342,28 @@ export class ChatRoom {
           // 不再检查 request.method，允许 GET 请求触发清空
           await this.clearAllMessages();
           return new Response("聊天记录已清空。", { status: 200 });
+        }
+
+        case "/blacklist/add": {
+          let name = url.searchParams.get("name");
+          if (!name) return new Response("请提供用户名", { status: 400 });
+          this.blacklist.add(name);
+          await this.storage.put("blacklist", [...this.blacklist]);
+          return new Response(name + " 已被加入黑名单", { status: 200 });
+        }
+
+        case "/blacklist/remove": {
+          let name = url.searchParams.get("name");
+          if (!name) return new Response("请提供用户名", { status: 400 });
+          this.blacklist.delete(name);
+          await this.storage.put("blacklist", [...this.blacklist]);
+          return new Response(name + " 已被移出黑名单", { status: 200 });
+        }
+
+        case "/blacklist/list": {
+          return new Response(JSON.stringify([...this.blacklist]), {
+            status: 200, headers: {"Content-Type": "application/json"}
+          });
         }
 
         default:
@@ -403,6 +470,12 @@ export class ChatRoom {
 
       // 处理踢人请求
       if (data.type === "kick") {
+        // 检查是否在黑名单中
+        if (this.blacklist.has(session.name)) {
+          webSocket.send(JSON.stringify({error: "你已被加入黑名单，无法踢人"}));
+          return;
+        }
+
         let targetName = data.target;
         if (!targetName) {
           webSocket.send(JSON.stringify({error: "未指定要踢出的用户"}));
