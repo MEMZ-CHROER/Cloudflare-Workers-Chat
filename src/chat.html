@@ -395,6 +395,7 @@ let isAtBottom = true;
 
 let username;
 let roomname;
+let roomListInterval = null;
 
 let hostname = window.location.host;
 if (hostname == "") {
@@ -478,6 +479,8 @@ function startRoomList() {
 
   // 加载房间列表
   loadRoomList();
+  // 每5秒刷新房间列表的在线人数
+  roomListInterval = setInterval(loadRoomList, 5000);
 }
 
 async function loadRoomList() {
@@ -512,6 +515,10 @@ async function loadRoomList() {
 }
 
 function startChat() {
+  if (roomListInterval) {
+    clearInterval(roomListInterval);
+    roomListInterval = null;
+  }
   if (roomForm) roomForm.remove();
   document.querySelector("#room-list-form").style.display = "none";
 
