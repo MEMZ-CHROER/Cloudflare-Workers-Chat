@@ -41,6 +41,7 @@
 
 // 我们通过导入将 HTML 内容作为 ArrayBuffer 加载，这样可以直接提供静态资源而无需额外存储
 import HTML from "./chat.html";
+import ADMIN from "./admin.html";
 
 // `handleErrors()` 是一个实用函数，用于包装 HTTP 请求处理器并在出错时向客户端返回错误信息
 async function handleErrors(request, func) {
@@ -91,6 +92,10 @@ export default {
         case "api":
           // 处理 `/api/...` 请求
           return handleApiRequest(path.slice(1), request, env);
+
+        case "admin":
+          // 管理后台页面
+          return new Response(ADMIN, {headers: {"Content-Type": "text/html;charset=UTF-8"}});
 
         default:
           return new Response("未找到", {status: 404});
@@ -250,6 +255,60 @@ async function handleApiRequest(path, request, env) {
             }
         }
 
+        case "room-users": {
+          const roomId = path[2];
+          if (!roomId) return new Response("请提供房间名称或 ID。", { status: 400 });
+
+          let id;
+          if (roomId.match(/^[0-9a-f]{64}$/)) {
+            id = env.rooms.idFromString(roomId);
+          } else if (roomId.length <= 32) {
+            id = env.rooms.idFromName(roomId);
+          } else {
+            return new Response("房间名称/ID格式不正确或过长。", { status: 400 });
+          }
+
+          try {
+            let roomObject = env.rooms.get(id);
+            let response = await roomObject.fetch(new URL("https://dummy-url/users"));
+            let users = await response.json();
+            return new Response(JSON.stringify(users), {
+              status: 200, headers: {"Content-Type": "application/json"}
+            });
+          } catch (error) {
+            return new Response("获取用户列表失败: " + error.message, { status: 500 });
+          }
+        }
+
+        case "kick-user": {
+          const roomId = path[2];
+          const userName = url.searchParams.get("name");
+          if (!roomId) return new Response("请提供房间名称或 ID。", { status: 400 });
+          if (!userName) return new Response("请提供用户名（?name=xxx）。", { status: 400 });
+
+          let id;
+          if (roomId.match(/^[0-9a-f]{64}$/)) {
+            id = env.rooms.idFromString(roomId);
+          } else if (roomId.length <= 32) {
+            id = env.rooms.idFromName(roomId);
+          } else {
+            return new Response("房间名称/ID格式不正确或过长。", { status: 400 });
+          }
+
+          try {
+            let roomObject = env.rooms.get(id);
+            let doUrl = "https://dummy-url/do-kick?name=" + encodeURIComponent(userName);
+            let response = await roomObject.fetch(new URL(doUrl));
+            let text = await response.text();
+            if (response.ok) {
+              return new Response(text, { status: 200 });
+            }
+            return new Response(text, { status: response.status });
+          } catch (error) {
+            return new Response("踢人失败: " + error.message, { status: 500 });
+          }
+        }
+
         case "blacklist": {
           const action = path[2]; // add, remove, list
           const roomId = path[3];
@@ -389,6 +448,42 @@ export class ChatRoom {
           return new Response(JSON.stringify([...this.blacklist]), {
             status: 200, headers: {"Content-Type": "application/json"}
           });
+        }
+
+        case "/users": {
+          let users = [];
+          for (let s of this.sessions.values()) {
+            if (s.name) users.push(s.name);
+          }
+          return new Response(JSON.stringify(users), {
+            status: 200, headers: {"Content-Type": "application/json"}
+          });
+        }
+
+        case "/do-kick": {
+          let targetName = url.searchParams.get("name");
+          if (!targetName) return new Response("请提供用户名", {status: 400});
+
+          let kickedWs = null;
+          for (let [ws, s] of this.sessions) {
+            if (s.name === targetName) {
+              kickedWs = ws;
+              break;
+            }
+          }
+
+          if (kickedWs) {
+            this.sessions.delete(kickedWs);
+            kickedWs.close(1000, "kicked");
+            this.broadcast({kicked: targetName});
+            return new Response("已踢出 " + targetName, {status: 200});
+          }
+          return new Response("未找到用户 " + targetName, {status: 404});
+        }
+
+        case "/do-clear": {
+          await this.clearAllMessages();
+          return new Response("聊天记录已清空。", { status: 200 });
         }
 
         default:
