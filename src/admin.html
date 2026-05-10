@@ -112,6 +112,12 @@ body { font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 16px; back
 .global-user-item .kick-btn:hover { background: #fee; }
 .global-user-item .ban-btn { padding: 4px 10px; border: 1px solid #e88; color: #c00; background: #fff; border-radius: 4px; cursor: pointer; font-size: 85%; white-space: nowrap; margin-left: 6px; }
 .global-user-item .ban-btn:hover { background: #fee; }
+.tag-badge { display: inline-block; font-size: 80%; font-weight: bold; color: #fff; background: #e68a2e; padding: 0 5px; border-radius: 3px; margin-left: 4px; }
+.tag-input { width: 50px; padding: 2px 4px; font-size: 85%; border: 1px solid #ccc; border-radius: 3px; margin-left: 4px; }
+.tag-set-btn { padding: 4px 6px; border: 1px solid #ccc; background: #fff; border-radius: 4px; cursor: pointer; font-size: 80%; margin-left: 4px; }
+.tag-set-btn:hover { background: #eee; }
+.tag-remove-btn { padding: 4px 6px; border: 1px solid #e88; color: #c00; background: #fff; border-radius: 4px; cursor: pointer; font-size: 80%; margin-left: 4px; }
+.tag-remove-btn:hover { background: #fee; }
 
 #banned-users-section { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 16px; padding: 16px; }
 #banned-users-section h2 { font-size: 110%; margin: 0 0 12px 0; }
@@ -245,6 +251,13 @@ async function loadGlobalUsers() {
       });
     }
 
+    // 获取标签列表
+    let tagMap = {};
+    try {
+      let tr = await fetch("/api/admin/tag/list?key=" + encodeURIComponent(adminKey));
+      tagMap = await tr.json();
+    } catch (e) { /* 忽略 */ }
+
     let entries = Object.entries(userRooms);
     if (entries.length === 0) {
       container.innerHTML = '<div style="color:#888;padding:8px 0">暂无在线用户</div>';
@@ -253,8 +266,14 @@ async function loadGlobalUsers() {
 
     let html = '';
     entries.forEach(([user, rooms]) => {
+      let userTag = tagMap[user] || '';
+      let tagHtml = userTag
+        ? '<span class="tag-badge">' + escapeHtml(userTag) + '</span>'
+            + '<button class="tag-remove-btn" onclick="removeTag(\'' + user.replace(/'/g, "\\'") + '\')">✕</button>'
+        : '<input class="tag-input" id="tag-input-' + user.replace(/[^a-zA-Z0-9_-]/g, '_') + '" placeholder="标签" maxlength="10">'
+            + '<button class="tag-set-btn" onclick="setTag(\'' + user.replace(/'/g, "\\'") + '\')">设置</button>';
       html += '<div class="global-user-item">' +
-        '<span class="name">' + escapeHtml(user) + '</span>' +
+        '<span class="name">' + escapeHtml(user) + tagHtml + '</span>' +
         '<span class="rooms">房间: ' + rooms.map(r => '#' + r).join(', ') + '</span>' +
         '<span>' +
         '<button class="kick-btn" onclick="globalKick(\'' + user.replace(/'/g, "\\'") + '\')">全局踢出</button>' +
@@ -332,6 +351,32 @@ async function loadBannedList() {
 }
 
 let expandedRoom = null;
+
+async function setTag(user) {
+  let input = document.querySelector('#tag-input-' + user.replace(/[^a-zA-Z0-9_-]/g, '_'));
+  if (!input) return;
+  let tag = input.value.trim();
+  if (!tag) { alert("请输入标签"); return; }
+  try {
+    let r = await fetch("/api/admin/tag/set?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(user) + "&tag=" + encodeURIComponent(tag));
+    let text = await r.text();
+    alert(text);
+    loadGlobalUsers();
+  } catch (e) {
+    alert("操作失败");
+  }
+}
+
+async function removeTag(user) {
+  try {
+    let r = await fetch("/api/admin/tag/remove?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(user));
+    let text = await r.text();
+    alert(text);
+    loadGlobalUsers();
+  } catch (e) {
+    alert("操作失败");
+  }
+}
 
 async function toggleRoom(card, name) {
   let detail = card.querySelector(".room-detail");
