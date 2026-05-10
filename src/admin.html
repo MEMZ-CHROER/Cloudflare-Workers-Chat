@@ -112,7 +112,8 @@ body { font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 16px; back
 .global-user-item .kick-btn:hover { background: #fee; }
 .global-user-item .ban-btn { padding: 4px 10px; border: 1px solid #e88; color: #c00; background: #fff; border-radius: 4px; cursor: pointer; font-size: 85%; white-space: nowrap; margin-left: 6px; }
 .global-user-item .ban-btn:hover { background: #fee; }
-.tag-badge { display: inline-block; font-size: 80%; font-weight: bold; color: #fff; background: #e68a2e; padding: 0 5px; border-radius: 3px; margin-left: 4px; }
+.tag-badge { display: inline-block; font-size: 80%; font-weight: bold; color: #fff; padding: 0 5px; border-radius: 3px; margin-left: 4px; }
+.tag-color-select { width: 70px; padding: 2px 4px; font-size: 80%; border: 1px solid #ccc; border-radius: 3px; margin-left: 4px; vertical-align: middle; }
 .tag-input { width: 50px; padding: 2px 4px; font-size: 85%; border: 1px solid #ccc; border-radius: 3px; margin-left: 4px; }
 .tag-set-btn { padding: 4px 6px; border: 1px solid #ccc; background: #fff; border-radius: 4px; cursor: pointer; font-size: 80%; margin-left: 4px; }
 .tag-set-btn:hover { background: #eee; }
@@ -177,6 +178,12 @@ body { font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 16px; back
 </div>
 
 <script>
+const TAG_COLORS = {
+  red: "#e74c3c", blue: "#3498db", green: "#2ecc71",
+  purple: "#9b59b6", pink: "#e91e63", cyan: "#00bcd4",
+  gray: "#95a5a6", orange: "#e67e22"
+};
+
 let adminKey = localStorage.getItem("admin_key") || "";
 let refreshInterval = null;
 
@@ -287,10 +294,24 @@ async function loadGlobalUsers() {
     let html = '';
     entries.forEach(([user, rooms]) => {
       let userTag = tagMap[user] || '';
-      let tagHtml = userTag
-        ? '<span class="tag-badge">' + escapeHtml(userTag) + '</span>'
+      let tagText = userTag.tag || '';
+      let tagColor = userTag.color || '';
+      let tagStyle = tagColor && TAG_COLORS[tagColor] ? 'style="background:' + TAG_COLORS[tagColor] + '"' : '';
+      let tagHtml = tagText
+        ? '<span class="tag-badge" ' + tagStyle + '>' + escapeHtml(tagText) + '</span>'
             + '<button class="tag-remove-btn" onclick="removeTag(\'' + user.replace(/'/g, "\\'") + '\')">✕</button>'
         : '<input class="tag-input" id="tag-input-' + user.replace(/[^a-zA-Z0-9_-]/g, '_') + '" placeholder="标签" maxlength="10">'
+            + '<select class="tag-color-select" id="color-select-' + user.replace(/[^a-zA-Z0-9_-]/g, '_') + '">'
+            + '<option value="">默认</option>'
+            + '<option value="red">红色</option>'
+            + '<option value="blue">蓝色</option>'
+            + '<option value="green">绿色</option>'
+            + '<option value="purple">紫色</option>'
+            + '<option value="pink">粉色</option>'
+            + '<option value="cyan">青色</option>'
+            + '<option value="gray">灰色</option>'
+            + '<option value="orange">橙色</option>'
+            + '</select>'
             + '<button class="tag-set-btn" onclick="setTag(\'' + user.replace(/'/g, "\\'") + '\')">设置</button>';
       html += '<div class="global-user-item">' +
         '<span class="name">' + escapeHtml(user) + tagHtml + '</span>' +
@@ -412,10 +433,24 @@ async function loadHistoryUsers() {
         ? '<span class="online">● 在线</span>'
         : '<span class="offline">○ 离线</span>';
       let userTag = tagMap[user] || '';
-      let tagHtml = userTag
-        ? '<span class="tag-badge">' + escapeHtml(userTag) + '</span>'
+      let tagText = userTag.tag || '';
+      let tagColor = userTag.color || '';
+      let tagStyle = tagColor && TAG_COLORS[tagColor] ? 'style="background:' + TAG_COLORS[tagColor] + '"' : '';
+      let tagHtml = tagText
+        ? '<span class="tag-badge" ' + tagStyle + '>' + escapeHtml(tagText) + '</span>'
             + '<button class="tag-remove-btn" onclick="removeTag(\'' + user.replace(/'/g, "\\'") + '\')">✕</button>'
         : '<input class="tag-input" id="tag-input-' + user.replace(/[^a-zA-Z0-9_-]/g, '_') + '" placeholder="标签" maxlength="10">'
+            + '<select class="tag-color-select" id="color-select-' + user.replace(/[^a-zA-Z0-9_-]/g, '_') + '">'
+            + '<option value="">默认</option>'
+            + '<option value="red">红色</option>'
+            + '<option value="blue">蓝色</option>'
+            + '<option value="green">绿色</option>'
+            + '<option value="purple">紫色</option>'
+            + '<option value="pink">粉色</option>'
+            + '<option value="cyan">青色</option>'
+            + '<option value="gray">灰色</option>'
+            + '<option value="orange">橙色</option>'
+            + '</select>'
             + '<button class="tag-set-btn" onclick="setTag(\'' + user.replace(/'/g, "\\'") + '\')">设置</button>';
       let isBanned = bannedList.includes(user);
 
@@ -445,11 +480,14 @@ async function setTag(user) {
   if (!input) return;
   let tag = input.value.trim();
   if (!tag) { alert("请输入标签"); return; }
+  let colorSelect = document.querySelector('#color-select-' + user.replace(/[^a-zA-Z0-9_-]/g, '_'));
+  let color = colorSelect ? colorSelect.value : "";
   try {
-    let r = await fetch("/api/admin/tag/set?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(user) + "&tag=" + encodeURIComponent(tag));
+    let r = await fetch("/api/admin/tag/set?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(user) + "&tag=" + encodeURIComponent(tag) + "&color=" + encodeURIComponent(color));
     let text = await r.text();
     alert(text);
     loadGlobalUsers();
+    loadHistoryUsers();
   } catch (e) {
     alert("操作失败");
   }
@@ -461,6 +499,7 @@ async function removeTag(user) {
     let text = await r.text();
     alert(text);
     loadGlobalUsers();
+    loadHistoryUsers();
   } catch (e) {
     alert("操作失败");
   }
