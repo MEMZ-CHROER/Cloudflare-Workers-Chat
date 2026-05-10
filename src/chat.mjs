@@ -478,7 +478,7 @@ async function handleApiRequest(path, request, env) {
             let registryStub = env.registry.get(registryId);
 
             // 辅助函数：更新所有房间的标签
-            async function updateTagInRooms(name, tag) {
+            async function updateTagInRooms(name, tag, color) {
               try {
                 let roomsResponse = await registryStub.fetch(new URL("https://dummy-url/list"));
                 let rooms = await roomsResponse.json();
@@ -490,24 +490,25 @@ async function handleApiRequest(path, request, env) {
                     id = env.rooms.idFromName(roomName);
                   } else continue;
                   let roomObject = env.rooms.get(id);
-                  await roomObject.fetch(new URL("https://dummy-url/tag-update?name=" + encodeURIComponent(name) + "&tag=" + encodeURIComponent(tag)));
+                  await roomObject.fetch(new URL("https://dummy-url/tag-update?name=" + encodeURIComponent(name) + "&tag=" + encodeURIComponent(tag) + "&color=" + encodeURIComponent(color)));
                 }
               } catch (e) { /* 尽力而为 */ }
             }
 
             if (action === "set") {
               const tag = url.searchParams.get("tag");
+              const color = url.searchParams.get("color") || "";
               if (!userName) return new Response("请提供用户名", { status: 400 });
               if (!tag) return new Response("请提供标签", { status: 400 });
-              let response = await registryStub.fetch(new URL("https://dummy-url/tag/set?name=" + encodeURIComponent(userName) + "&tag=" + encodeURIComponent(tag)));
+              let response = await registryStub.fetch(new URL("https://dummy-url/tag/set?name=" + encodeURIComponent(userName) + "&tag=" + encodeURIComponent(tag) + "&color=" + encodeURIComponent(color)));
               let text = await response.text();
-              await updateTagInRooms(userName, tag);
+              await updateTagInRooms(userName, tag, color);
               return new Response(text, { status: response.status });
             } else if (action === "remove") {
               if (!userName) return new Response("请提供用户名", { status: 400 });
               let response = await registryStub.fetch(new URL("https://dummy-url/tag/remove?name=" + encodeURIComponent(userName)));
               let text = await response.text();
-              await updateTagInRooms(userName, "");
+              await updateTagInRooms(userName, "", "");
               return new Response(text, { status: response.status });
             } else if (action === "list") {
               let response = await registryStub.fetch(new URL("https://dummy-url/tag/list"));
@@ -664,16 +665,18 @@ export class ChatRoom {
         case "/tag-update": {
           let targetName = url.searchParams.get("name");
           let newTag = url.searchParams.get("tag") || "";
+          let newColor = url.searchParams.get("color") || "";
           if (!targetName) return new Response("请提供用户名", {status: 400});
 
           for (let [ws, s] of this.sessions) {
             if (s.name === targetName) {
               s.tag = newTag;
+              s.tagColor = newColor;
               break;
             }
           }
 
-          this.broadcast({type: "tag-update", name: targetName, tag: newTag});
+          this.broadcast({type: "tag-update", name: targetName, tag: newTag, tagColor: newColor});
           return new Response("ok", {status: 200});
         }
 
@@ -720,6 +723,7 @@ export class ChatRoom {
       if (otherSession.name) {
         let msg = {joined: otherSession.name};
         if (otherSession.tag) msg.tag = otherSession.tag;
+        if (otherSession.tagColor) msg.tagColor = otherSession.tagColor;
         session.blockedMessages.push(JSON.stringify(msg));
       }
     }
@@ -801,15 +805,17 @@ export class ChatRoom {
           // 封禁检查失败，允许连接继续（尽力而为）
         }
 
-        // 获取用户标签
+        // 获取用户标签和颜色
         try {
           let registryId = this.env.registry.idFromName("global");
           let stub = this.env.registry.get(registryId);
           let tagRes = await stub.fetch("https://dummy-url/tag/get?name=" + encodeURIComponent(session.name));
           let tagData = await tagRes.json();
-          session.tag = tagData.tag || "";
+          session.tag = (tagData.tag || "");
+          session.tagColor = (tagData.color || "");
         } catch (e) {
           session.tag = "";
+          session.tagColor = "";
         }
 
         // 注册用户到历史记录
@@ -828,6 +834,7 @@ export class ChatRoom {
         // 广播用户加入消息
         let joinMsg = {joined: session.name};
         if (session.tag) joinMsg.tag = session.tag;
+        if (session.tagColor) joinMsg.tagColor = session.tagColor;
         this.broadcast(joinMsg);
 
         this.updateRegistry();
@@ -890,6 +897,7 @@ export class ChatRoom {
           timestamp: Math.max(Date.now(), this.lastTimestamp + 1)
         };
         if (session.tag) data.tag = session.tag;
+        if (session.tagColor) data.tagColor = session.tagColor;
         this.lastTimestamp = data.timestamp;
 
         let dataStr = JSON.stringify(data);
@@ -903,6 +911,7 @@ export class ChatRoom {
       // 构造净化后的消息
       data = { name: session.name, message: "" + data.message };
       if (session.tag) data.tag = session.tag;
+      if (session.tagColor) data.tagColor = session.tagColor;
 
       if (data.message.length > 256) {
         webSocket.send(JSON.stringify({error: "消息过长"}));
@@ -1161,11 +1170,13 @@ export class RoomRegistry {
       case "/tag/set": {
         let name = url.searchParams.get("name");
         let tag = url.searchParams.get("tag");
+        let color = url.searchParams.get("color") || "";
         if (!name) return new Response("请提供用户名", { status: 400 });
         if (!tag) return new Response("请提供标签", { status: 400 });
-        this.tags.set(name, tag);
+        this.tags.set(name, {tag, color});
         await this.saveTags();
-        return new Response("已为 " + name + " 设置标签 [" + tag + "]", { status: 200 });
+        let colorText = color ? " (颜色: " + color + ")" : "";
+        return new Response("已为 " + name + " 设置标签 [" + tag + "]" + colorText, { status: 200 });
       }
 
       case "/tag/remove": {
@@ -1178,18 +1189,21 @@ export class RoomRegistry {
 
       case "/tag/get": {
         let name = url.searchParams.get("name");
-        if (!name) return new Response(JSON.stringify({tag: ""}), {
+        if (!name) return new Response(JSON.stringify({tag: "", color: ""}), {
           headers: {"Content-Type": "application/json"}
         });
-        return new Response(JSON.stringify({tag: this.tags.get(name) || ""}), {
+        let td = this.tags.get(name) || {tag: "", color: ""};
+        if (typeof td === "string") td = {tag: td, color: ""};
+        return new Response(JSON.stringify(td), {
           headers: {"Content-Type": "application/json"}
         });
       }
 
       case "/tag/list": {
         let result = {};
-        for (let [name, tag] of this.tags) {
-          result[name] = tag;
+        for (let [name, td] of this.tags) {
+          if (typeof td === "string") td = {tag: td, color: ""};
+          result[name] = td;
         }
         return new Response(JSON.stringify(result), {
           headers: {"Content-Type": "application/json"}
