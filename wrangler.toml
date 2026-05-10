@@ -33,3 +33,6 @@ invocation_logs = true
 enabled = true
 persist = true
 head_sampling_rate = 1
+
+[vars]
+ADMIN_SECRET_KEY = "lxy130523" # <<< IMPORTANT: Replace with a strong, secret key
