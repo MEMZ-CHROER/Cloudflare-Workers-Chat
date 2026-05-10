@@ -811,8 +811,15 @@ export class ChatRoom {
           let stub = this.env.registry.get(registryId);
           let tagRes = await stub.fetch("https://dummy-url/tag/get?name=" + encodeURIComponent(session.name));
           let tagData = await tagRes.json();
-          session.tag = (tagData.tag || "");
-          session.tagColor = (tagData.color || "");
+          if (tagData.tag) {
+            session.tag = tagData.tag;
+            session.tagColor = tagData.color || "";
+          } else {
+            // 新用户自动设置蓝色 USER 标签
+            await stub.fetch("https://dummy-url/tag/set?name=" + encodeURIComponent(session.name) + "&tag=USER&color=blue");
+            session.tag = "USER";
+            session.tagColor = "blue";
+          }
         } catch (e) {
           session.tag = "";
           session.tagColor = "";
