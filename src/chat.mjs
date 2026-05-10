@@ -377,6 +377,24 @@ async function handleApiRequest(path, request, env) {
           }
         }
 
+        case "users": {
+          // users/history
+          try {
+            let registryId = env.registry.idFromName("global");
+            let registryStub = env.registry.get(registryId);
+            if (path[2] === "history") {
+              let response = await registryStub.fetch(new URL("https://dummy-url/known-users"));
+              let data = await response.json();
+              return new Response(JSON.stringify(data), {
+                status: 200, headers: {"Content-Type": "application/json"}
+              });
+            }
+            return new Response("未找到该操作", { status: 404 });
+          } catch (error) {
+            return new Response("获取用户列表失败: " + error.message, { status: 500 });
+          }
+        }
+
         case "ban": {
           // ban/add, ban/remove, ban/list
           const action = path[2]; // add, remove, list
@@ -459,17 +477,37 @@ async function handleApiRequest(path, request, env) {
             let registryId = env.registry.idFromName("global");
             let registryStub = env.registry.get(registryId);
 
+            // 辅助函数：更新所有房间的标签
+            async function updateTagInRooms(name, tag) {
+              try {
+                let roomsResponse = await registryStub.fetch(new URL("https://dummy-url/list"));
+                let rooms = await roomsResponse.json();
+                for (let [roomName] of Object.entries(rooms)) {
+                  let id;
+                  if (roomName.match(/^[0-9a-f]{64}$/)) {
+                    id = env.rooms.idFromString(roomName);
+                  } else if (roomName.length <= 32) {
+                    id = env.rooms.idFromName(roomName);
+                  } else continue;
+                  let roomObject = env.rooms.get(id);
+                  await roomObject.fetch(new URL("https://dummy-url/tag-update?name=" + encodeURIComponent(name) + "&tag=" + encodeURIComponent(tag)));
+                }
+              } catch (e) { /* 尽力而为 */ }
+            }
+
             if (action === "set") {
               const tag = url.searchParams.get("tag");
               if (!userName) return new Response("请提供用户名", { status: 400 });
               if (!tag) return new Response("请提供标签", { status: 400 });
               let response = await registryStub.fetch(new URL("https://dummy-url/tag/set?name=" + encodeURIComponent(userName) + "&tag=" + encodeURIComponent(tag)));
               let text = await response.text();
+              await updateTagInRooms(userName, tag);
               return new Response(text, { status: response.status });
             } else if (action === "remove") {
               if (!userName) return new Response("请提供用户名", { status: 400 });
               let response = await registryStub.fetch(new URL("https://dummy-url/tag/remove?name=" + encodeURIComponent(userName)));
               let text = await response.text();
+              await updateTagInRooms(userName, "");
               return new Response(text, { status: response.status });
             } else if (action === "list") {
               let response = await registryStub.fetch(new URL("https://dummy-url/tag/list"));
@@ -623,6 +661,22 @@ export class ChatRoom {
           return new Response("聊天记录已清空。", { status: 200 });
         }
 
+        case "/tag-update": {
+          let targetName = url.searchParams.get("name");
+          let newTag = url.searchParams.get("tag") || "";
+          if (!targetName) return new Response("请提供用户名", {status: 400});
+
+          for (let [ws, s] of this.sessions) {
+            if (s.name === targetName) {
+              s.tag = newTag;
+              break;
+            }
+          }
+
+          this.broadcast({type: "tag-update", name: targetName, tag: newTag});
+          return new Response("ok", {status: 200});
+        }
+
         default:
           return new Response("未找到", {status: 404});
       }
@@ -757,6 +811,13 @@ export class ChatRoom {
         } catch (e) {
           session.tag = "";
         }
+
+        // 注册用户到历史记录
+        try {
+          let registryId = this.env.registry.idFromName("global");
+          let stub = this.env.registry.get(registryId);
+          await stub.fetch("https://dummy-url/user-seen?name=" + encodeURIComponent(session.name));
+        } catch (e) { /* 尽力而为 */ }
 
         // 发送所有排队消息
         session.blockedMessages.forEach(queued => {
@@ -992,6 +1053,7 @@ export class RoomRegistry {
     this.rooms = new Map(); // name -> { count }
     this.banned = new Set(); // 被封禁的用户名
     this.tags = new Map(); // username -> tag 字符串
+    this.knownUsers = new Set(); // 所有历史在线用户名
     this.load();
   }
 
@@ -1008,6 +1070,10 @@ export class RoomRegistry {
     if (tagsData) {
       this.tags = new Map(tagsData);
     }
+    let knownUsersData = await this.storage.get("knownUsers");
+    if (knownUsersData) {
+      this.knownUsers = new Set(knownUsersData);
+    }
   }
 
   async save() {
@@ -1020,6 +1086,10 @@ export class RoomRegistry {
 
   async saveTags() {
     await this.storage.put("tags", [...this.tags]);
+  }
+
+  async saveKnownUsers() {
+    await this.storage.put("knownUsers", [...this.knownUsers]);
   }
 
   async fetch(request) {
