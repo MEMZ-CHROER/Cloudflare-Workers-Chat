@@ -410,9 +410,18 @@ function join() {
 
     if (data.error) {
       addChatMessage(null, "* 错误: " + data.error);
+    } else if (data.system) {
+      addChatMessage(null, "* " + data.system);
     } else if (data.joined) {
       let p = document.createElement("p");
       p.innerText = data.joined;
+      p.style.cursor = "pointer";
+      p.title = "点击踢出此用户";
+      p.addEventListener("click", () => {
+        if (currentWebSocket && confirm("确定要踢出「" + data.joined + "」吗？")) {
+          currentWebSocket.send(JSON.stringify({type: "kick", target: data.joined}));
+        }
+      });
       roster.appendChild(p);
     } else if (data.quit) {
       for (let child of roster.childNodes) {
@@ -421,6 +430,14 @@ function join() {
           break;
         }
       }
+    } else if (data.kicked) {
+      for (let child of roster.childNodes) {
+        if (child.innerText == data.kicked) {
+          roster.removeChild(child);
+          break;
+        }
+      }
+      addChatMessage(null, "* " + data.kicked + " 已被踢出房间");
     } else if (data.ready) {
       // 所有加入前的消息都已传送完毕
       if (!wroteWelcomeMessages) {
@@ -456,6 +473,9 @@ function join() {
 
   ws.addEventListener("close", event => {
     console.log("WebSocket连接关闭，正在重新连接:", event.code, event.reason);
+    if (event.reason === "kicked") {
+      addChatMessage(null, "* 你已被踢出房间");
+    }
     rejoin();
   });
   ws.addEventListener("error", event => {
