@@ -671,6 +671,7 @@ function join() {
           addChatMessage(null,
               "* 欢迎来到 #" + roomname + " 房间！打个招呼吧！");
         }
+        chatlog.scrollBy(0, 1e8);
       }
     } else {
       // 常规聊天消息
@@ -709,11 +710,8 @@ function addChatMessage(name, text) {
   }
   p.appendChild(document.createTextNode(text));
 
-  // 添加新的聊天行，确保如果聊天记录之前已滚动到底部，
-  // 则保持底部位置，否则不改变滚动位置
   chatlog.appendChild(p);
-  if (isAtBottom) {
-    chatlog.scrollBy(0, 1e8);
+  chatlog.scrollBy(0, 1e8);
   }
 }
 
