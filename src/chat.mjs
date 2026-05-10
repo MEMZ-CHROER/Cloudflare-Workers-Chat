@@ -824,6 +824,8 @@ export class ChatRoom {
           session.tag = "";
           session.tagColor = "";
         }
+        // 保存标签到 WebSocket 附件，防止 DO 休眠后丢失
+        webSocket.serializeAttachment({ ...webSocket.deserializeAttachment(), tag: session.tag, tagColor: session.tagColor });
 
         // 注册用户到历史记录
         try {
