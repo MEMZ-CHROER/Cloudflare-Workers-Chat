@@ -154,6 +154,7 @@ body { font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 16px; back
 
 <script>
 let adminKey = localStorage.getItem("admin_key") || "";
+let refreshInterval = null;
 
 if (adminKey) {
   document.querySelector("#login-form").style.display = "none";
@@ -161,6 +162,7 @@ if (adminKey) {
   loadRooms();
   loadGlobalUsers();
   loadBannedList();
+  startAutoRefresh();
 }
 
 document.querySelector("#login-btn").addEventListener("click", () => {
@@ -176,6 +178,7 @@ document.querySelector("#login-btn").addEventListener("click", () => {
       loadRooms();
       loadGlobalUsers();
       loadBannedList();
+      startAutoRefresh();
     })
     .catch(e => {
       document.querySelector("#login-error").style.display = "block";
@@ -187,6 +190,7 @@ document.querySelector("#admin-key").addEventListener("keydown", e => {
 });
 
 document.querySelector("#logout-btn").addEventListener("click", () => {
+  stopAutoRefresh();
   localStorage.removeItem("admin_key");
   adminKey = "";
   document.querySelector("#admin-panel").style.display = "none";
@@ -280,11 +284,14 @@ async function globalKick(user) {
 async function banUser(user) {
   if (!confirm("确定封禁 " + user + " 吗？封禁后该用户无法加入任何聊天室。")) return;
   try {
+    // 先全局踢出，再封禁
+    await fetch("/api/admin/global-kick?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(user));
     let r = await fetch("/api/admin/ban/add?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(user));
     let text = await r.text();
     alert(text);
     loadBannedList();
     loadGlobalUsers();
+    loadRooms();
   } catch (e) {
     alert("操作失败");
   }
@@ -457,6 +464,34 @@ async function clearRoom(room) {
     alert(text);
   } catch (e) {
     alert("操作失败");
+  }
+}
+
+function startAutoRefresh() {
+  if (refreshInterval) clearInterval(refreshInterval);
+  refreshInterval = setInterval(async () => {
+    let expanded = expandedRoom;
+    await loadRooms();
+    // 恢复之前展开的房间
+    if (expanded) {
+      let card = document.querySelector('.room-card[data-room="' + expanded.replace(/"/g, '') + '"]');
+      if (card) {
+        let detail = card.querySelector(".room-detail");
+        let arrow = card.querySelector(".arrow");
+        detail.classList.add("open");
+        arrow.classList.add("open");
+        await loadRoomDetail(detail, expanded);
+      }
+    }
+    loadGlobalUsers();
+    loadBannedList();
+  }, 10000);
+}
+
+function stopAutoRefresh() {
+  if (refreshInterval) {
+    clearInterval(refreshInterval);
+    refreshInterval = null;
   }
 }
 </script>
