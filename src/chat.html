@@ -807,12 +807,19 @@ function join() {
       let p = document.createElement("p");
       p.dataset.name = data.joined;
       p.style.cursor = "pointer";
-      p.title = "点击踢出此用户";
-      p.addEventListener("click", () => {
-        if (currentWebSocket && confirm("确定要踢出「" + data.joined + "」吗？")) {
-          currentWebSocket.send(JSON.stringify({type: "kick", target: data.joined}));
-        }
-      });
+      if (data.joined === username) {
+        p.title = "点击修改标签";
+        p.addEventListener("click", () => {
+          modifyOwnTag(data.tag, data.tagColor);
+        });
+      } else {
+        p.title = "点击踢出此用户";
+        p.addEventListener("click", () => {
+          if (currentWebSocket && confirm("确定要踢出「" + data.joined + "」吗？")) {
+            currentWebSocket.send(JSON.stringify({type: "kick", target: data.joined}));
+          }
+        });
+      }
       if (data.tag) {
         let badge = document.createElement("span");
         badge.className = "tag";
@@ -929,6 +936,28 @@ function join() {
   });
 }
 
+async function modifyOwnTag(currentTag, currentColor) {
+  let adminKey = localStorage.getItem("admin_key");
+  if (!adminKey) {
+    addChatMessage(null, "* 请先登录管理后台（访问 /admin）才能修改标签");
+    return;
+  }
+  let newTag = prompt("输入新标签（留空取消）:", currentTag || "");
+  if (newTag === null || !newTag.trim()) return;
+  let colorPrompt = "输入颜色（留空为默认）:\n可选: red, blue, green, purple, pink, cyan, gray, orange";
+  let newColor = prompt(colorPrompt, currentColor || "");
+  if (newColor === null) newColor = "";
+  try {
+    let url = "/api/admin/tag/set?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(username) + "&tag=" + encodeURIComponent(newTag.trim());
+    if (newColor) url += "&color=" + encodeURIComponent(newColor);
+    let r = await fetch(url);
+    let t = await r.text();
+    addChatMessage(null, "* " + t);
+  } catch (e) {
+    addChatMessage(null, "* 修改标签失败: " + e.message);
+  }
+}
+
 function addChatMessage(name, text, tag, tagColor) {
   let p = document.createElement("p");
   if (name) {
@@ -938,6 +967,14 @@ function addChatMessage(name, text, tag, tagColor) {
       badge.textContent = tag;
       if (tagColor && TAG_COLORS[tagColor]) {
         badge.style.backgroundColor = TAG_COLORS[tagColor];
+      }
+      if (name === username) {
+        badge.style.cursor = "pointer";
+        badge.title = "点击修改标签";
+        badge.addEventListener("click", (e) => {
+          e.stopPropagation();
+          modifyOwnTag(tag, tagColor);
+        });
       }
       p.appendChild(badge);
     }
@@ -961,6 +998,14 @@ function addChatImage(name, data, tag, tagColor) {
       badge.textContent = tag;
       if (tagColor && TAG_COLORS[tagColor]) {
         badge.style.backgroundColor = TAG_COLORS[tagColor];
+      }
+      if (name === username) {
+        badge.style.cursor = "pointer";
+        badge.title = "点击修改标签";
+        badge.addEventListener("click", (e) => {
+          e.stopPropagation();
+          modifyOwnTag(tag, tagColor);
+        });
       }
       p.appendChild(badge);
     }
