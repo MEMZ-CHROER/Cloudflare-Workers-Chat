@@ -498,6 +498,9 @@ function join() {
         }
       });
       roster.appendChild(p);
+      if (wroteWelcomeMessages) {
+        addChatMessage(null, "* " + data.joined + " 进入了聊天室");
+      }
     } else if (data.quit) {
       for (let child of roster.childNodes) {
         if (child.innerText == data.quit) {
