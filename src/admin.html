@@ -102,6 +102,15 @@ body { font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 16px; back
   border-radius: 4px; cursor: pointer; font-size: 85%;
 }
 
+#global-users-section { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 16px; padding: 16px; }
+#global-users-section h2 { font-size: 110%; margin: 0 0 12px 0; }
+.global-user-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
+.global-user-item:last-child { border-bottom: none; }
+.global-user-item .name { font-weight: bold; min-width: 100px; }
+.global-user-item .rooms { color: #888; font-size: 90%; flex: 1; margin: 0 12px; }
+.global-user-item .kick-btn { padding: 4px 10px; border: 1px solid #e88; color: #c00; background: #fff; border-radius: 4px; cursor: pointer; font-size: 85%; white-space: nowrap; }
+.global-user-item .kick-btn:hover { background: #fee; }
+
 #loading { text-align: center; color: #888; padding: 40px; }
 </style>
 </head>
@@ -123,6 +132,10 @@ body { font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 16px; back
   <div id="room-list-container">
     <div id="loading">加载中...</div>
   </div>
+  <div id="global-users-section">
+    <h2>全局在线用户</h2>
+    <div id="global-users-list">加载中...</div>
+  </div>
 </div>
 
 <script>
@@ -132,6 +145,7 @@ if (adminKey) {
   document.querySelector("#login-form").style.display = "none";
   document.querySelector("#admin-panel").style.display = "block";
   loadRooms();
+  loadGlobalUsers();
 }
 
 document.querySelector("#login-btn").addEventListener("click", () => {
@@ -145,6 +159,7 @@ document.querySelector("#login-btn").addEventListener("click", () => {
       document.querySelector("#login-form").style.display = "none";
       document.querySelector("#admin-panel").style.display = "block";
       loadRooms();
+      loadGlobalUsers();
     })
     .catch(e => {
       document.querySelector("#login-error").style.display = "block";
@@ -191,6 +206,55 @@ async function loadRooms() {
     });
   } catch (e) {
     container.innerHTML = '<div id="loading">加载失败: ' + e.message + '</div>';
+  }
+}
+
+async function loadGlobalUsers() {
+  let container = document.querySelector("#global-users-list");
+  try {
+    let r = await fetch("/api/admin/all-users?key=" + encodeURIComponent(adminKey));
+    let data = await r.json();
+    // data 格式: { roomName: [user1, user2, ...], ... }
+
+    // 构建用户 -> 房间列表的映射
+    let userRooms = {};
+    for (let [room, users] of Object.entries(data)) {
+      users.forEach(u => {
+        if (!userRooms[u]) userRooms[u] = [];
+        userRooms[u].push(room);
+      });
+    }
+
+    let entries = Object.entries(userRooms);
+    if (entries.length === 0) {
+      container.innerHTML = '<div style="color:#888;padding:8px 0">暂无在线用户</div>';
+      return;
+    }
+
+    let html = '';
+    entries.forEach(([user, rooms]) => {
+      html += '<div class="global-user-item">' +
+        '<span class="name">' + escapeHtml(user) + '</span>' +
+        '<span class="rooms">房间: ' + rooms.map(r => '#' + r).join(', ') + '</span>' +
+        '<button class="kick-btn" onclick="globalKick(\'' + user.replace(/'/g, "\\'") + '\')">全局踢出</button>' +
+        '</div>';
+    });
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = '<div style="color:#c00;padding:8px 0">加载失败: ' + e.message + '</div>';
+  }
+}
+
+async function globalKick(user) {
+  if (!confirm("确定将 " + user + " 从所有房间踢出吗？")) return;
+  try {
+    let r = await fetch("/api/admin/global-kick?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(user));
+    let data = await r.json();
+    alert("已从 " + data.kickedFrom.length + " 个房间踢出 " + user);
+    loadGlobalUsers();
+    loadRooms();
+  } catch (e) {
+    alert("操作失败");
   }
 }
 
