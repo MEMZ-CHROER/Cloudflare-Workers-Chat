@@ -127,6 +127,19 @@ body { font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 16px; back
 .banned-user-item .unban-btn { padding: 4px 10px; border: 1px solid #ccc; background: #fff; border-radius: 4px; cursor: pointer; font-size: 85%; }
 .banned-user-item .unban-btn:hover { background: #eee; }
 
+#history-users-section { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 16px; padding: 16px; }
+#history-users-section h2 { font-size: 110%; margin: 0 0 12px 0; }
+#history-users-section .summary { color: #888; font-size: 90%; margin-bottom: 12px; }
+.history-user-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px solid #f0f0f0; }
+.history-user-item:last-child { border-bottom: none; }
+.history-user-item .name { font-weight: bold; }
+.history-user-item .online { color: #090; font-size: 80%; margin-left: 6px; }
+.history-user-item .offline { color: #999; font-size: 80%; margin-left: 6px; }
+.history-user-item .actions button { padding: 2px 8px; border: 1px solid #ccc; background: #fff; border-radius: 3px; cursor: pointer; font-size: 80%; margin-left: 4px; }
+.history-user-item .actions button:hover { background: #eee; }
+.history-user-item .actions .btn-danger { border-color: #e88; color: #c00; }
+.history-user-item .actions .btn-danger:hover { background: #fee; }
+
 #loading { text-align: center; color: #888; padding: 40px; }
 </style>
 </head>
@@ -156,6 +169,11 @@ body { font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 16px; back
     <h2>被封禁用户</h2>
     <div id="banned-users-list">加载中...</div>
   </div>
+  <div id="history-users-section">
+    <h2>历史用户</h2>
+    <div class="summary">所有曾加入过聊天室的用户</div>
+    <div id="history-users-list">加载中...</div>
+  </div>
 </div>
 
 <script>
@@ -168,6 +186,7 @@ if (adminKey) {
   loadRooms();
   loadGlobalUsers();
   loadBannedList();
+  loadHistoryUsers();
   startAutoRefresh();
 }
 
@@ -184,6 +203,7 @@ document.querySelector("#login-btn").addEventListener("click", () => {
       loadRooms();
       loadGlobalUsers();
       loadBannedList();
+      loadHistoryUsers();
       startAutoRefresh();
     })
     .catch(e => {
@@ -343,6 +363,72 @@ async function loadBannedList() {
         '<span class="name">' + escapeHtml(user) + '</span>' +
         '<button class="unban-btn" onclick="unbanUser(\'' + user.replace(/'/g, "\\'") + '\')">解封</button>' +
         '</div>';
+    });
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = '<div style="color:#c00;padding:8px 0">加载失败: ' + e.message + '</div>';
+  }
+}
+
+async function loadHistoryUsers() {
+  let container = document.querySelector("#history-users-list");
+  try {
+    let [historyRes, onlineRes] = await Promise.all([
+      fetch("/api/admin/users/history?key=" + encodeURIComponent(adminKey)),
+      fetch("/api/admin/all-users?key=" + encodeURIComponent(adminKey))
+    ]);
+    let allUsers = await historyRes.json();
+    let onlineData = await onlineRes.json();
+
+    // 构建在线用户集合
+    let onlineSet = new Set();
+    for (let users of Object.values(onlineData)) {
+      users.forEach(u => onlineSet.add(u));
+    }
+
+    // 获取标签
+    let tagMap = {};
+    try {
+      let tr = await fetch("/api/admin/tag/list?key=" + encodeURIComponent(adminKey));
+      tagMap = await tr.json();
+    } catch (e) { /* 忽略 */ }
+
+    // 获取封禁列表
+    let bannedList = [];
+    try {
+      let br = await fetch("/api/admin/ban/list?key=" + encodeURIComponent(adminKey));
+      bannedList = await br.json();
+    } catch (e) { /* 忽略 */ }
+
+    if (!Array.isArray(allUsers) || allUsers.length === 0) {
+      container.innerHTML = '<div style="color:#888;padding:8px 0">暂无历史用户</div>';
+      return;
+    }
+
+    let html = '';
+    allUsers.forEach(user => {
+      let isOnline = onlineSet.has(user);
+      let statusHtml = isOnline
+        ? '<span class="online">● 在线</span>'
+        : '<span class="offline">○ 离线</span>';
+      let userTag = tagMap[user] || '';
+      let tagHtml = userTag
+        ? '<span class="tag-badge">' + escapeHtml(userTag) + '</span>'
+        : '';
+      let isBanned = bannedList.includes(user);
+
+      html += '<div class="history-user-item">' +
+        '<span><span class="name">' + escapeHtml(user) + '</span>' + tagHtml + ' ' + statusHtml + '</span>' +
+        '<span class="actions">';
+      if (!isOnline) {
+        html += '<button class="btn-danger" onclick="globalKick(\'' + user.replace(/'/g, "\\'") + '\')">踢出</button>';
+      }
+      if (!isBanned) {
+        html += '<button class="btn-danger" onclick="banUser(\'' + user.replace(/'/g, "\\'") + '\')">封禁</button>';
+      } else {
+        html += '<button onclick="unbanUser(\'' + user.replace(/'/g, "\\'") + '\')">解封</button>';
+      }
+      html += '</span></div>';
     });
     container.innerHTML = html;
   } catch (e) {
@@ -530,6 +616,7 @@ function startAutoRefresh() {
     }
     loadGlobalUsers();
     loadBannedList();
+    loadHistoryUsers();
   }, 10000);
 }
 
