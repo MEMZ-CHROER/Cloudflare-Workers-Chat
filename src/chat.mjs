@@ -428,6 +428,64 @@ async function handleApiRequest(path, request, env) {
           }
         }
 
+        case "ip-ban": {
+          // ip-ban/add, ip-ban/remove, ip-ban/list
+          const action = path[2];
+          const ip = url.searchParams.get("ip");
+
+          try {
+            let registryId = env.registry.idFromName("global");
+            let registryStub = env.registry.get(registryId);
+
+            if (action === "add") {
+              if (!ip) return new Response("请提供IP地址", { status: 400 });
+              let response = await registryStub.fetch(new URL("https://dummy-url/ip-ban?ip=" + encodeURIComponent(ip)));
+              let text = await response.text();
+              return new Response(text, { status: response.status });
+            } else if (action === "remove") {
+              if (!ip) return new Response("请提供IP地址", { status: 400 });
+              let response = await registryStub.fetch(new URL("https://dummy-url/ip-unban?ip=" + encodeURIComponent(ip)));
+              let text = await response.text();
+              return new Response(text, { status: response.status });
+            } else if (action === "list") {
+              let response = await registryStub.fetch(new URL("https://dummy-url/ip-banned-list"));
+              let data = await response.json();
+              return new Response(JSON.stringify(data), {
+                status: 200, headers: {"Content-Type": "application/json"}
+              });
+            }
+
+            return new Response("未找到该操作", { status: 404 });
+          } catch (error) {
+            return new Response("IP封禁操作失败: " + error.message, { status: 500 });
+          }
+        }
+
+        case "room-users-detail": {
+          const roomId = path[2];
+          if (!roomId) return new Response("请提供房间名称或 ID。", { status: 400 });
+
+          let id;
+          if (roomId.match(/^[0-9a-f]{64}$/)) {
+            id = env.rooms.idFromString(roomId);
+          } else if (roomId.length <= 32) {
+            id = env.rooms.idFromName(roomId);
+          } else {
+            return new Response("房间名称/ID格式不正确或过长。", { status: 400 });
+          }
+
+          try {
+            let roomObject = env.rooms.get(id);
+            let response = await roomObject.fetch(new URL("https://dummy-url/users-detail"));
+            let users = await response.json();
+            return new Response(JSON.stringify(users), {
+              status: 200, headers: {"Content-Type": "application/json"}
+            });
+          } catch (error) {
+            return new Response("获取用户列表失败: " + error.message, { status: 500 });
+          }
+        }
+
         case "blacklist": {
           const action = path[2]; // add, remove, list
           const roomId = path[3];
@@ -635,6 +693,16 @@ export class ChatRoom {
           });
         }
 
+        case "/users-detail": {
+          let users = [];
+          for (let s of this.sessions.values()) {
+            if (s.name) users.push({name: s.name, ip: s.ip || ""});
+          }
+          return new Response(JSON.stringify(users), {
+            status: 200, headers: {"Content-Type": "application/json"}
+          });
+        }
+
         case "/do-kick": {
           let targetName = url.searchParams.get("name");
           if (!targetName) return new Response("请提供用户名", {status: 400});
@@ -714,8 +782,8 @@ export class ChatRoom {
         err => webSocket.close(1011, err.stack));
 
     // 创建会话并添加到会话映射
-    let session = { limiterId, limiter, blockedMessages: [] };
-    webSocket.serializeAttachment({ ...webSocket.deserializeAttachment(), limiterId: limiterId.toString() });
+    let session = { limiterId, limiter, blockedMessages: [], ip };
+    webSocket.serializeAttachment({ ...webSocket.deserializeAttachment(), limiterId: limiterId.toString(), ip });
     this.sessions.set(webSocket, session);
 
     // 为所有在线用户排队"加入"消息
@@ -803,6 +871,21 @@ export class ChatRoom {
           }
         } catch (e) {
           // 封禁检查失败，允许连接继续（尽力而为）
+        }
+
+        // 检查IP是否被封禁
+        try {
+          let registryId = this.env.registry.idFromName("global");
+          let stub = this.env.registry.get(registryId);
+          let ipBanCheck = await stub.fetch("https://dummy-url/is-ip-banned?ip=" + encodeURIComponent(session.ip));
+          let ipBanResult = await ipBanCheck.json();
+          if (ipBanResult.banned) {
+            webSocket.send(JSON.stringify({error: "你的IP已被封禁，无法加入聊天室"}));
+            webSocket.close(1000, "banned");
+            return;
+          }
+        } catch (e) {
+          // IP封禁检查失败，允许连接继续（尽力而为）
         }
 
         // 获取用户标签和颜色
@@ -1070,6 +1153,7 @@ export class RoomRegistry {
     this.storage = state.storage;
     this.rooms = new Map(); // name -> { count }
     this.banned = new Set(); // 被封禁的用户名
+    this.bannedIps = new Set(); // 被封禁的IP
     this.tags = new Map(); // username -> tag 字符串
     this.knownUsers = new Set(); // 所有历史在线用户名
     this.load();
@@ -1083,6 +1167,10 @@ export class RoomRegistry {
     let bannedData = await this.storage.get("banned");
     if (bannedData) {
       this.banned = new Set(bannedData);
+    }
+    let bannedIpsData = await this.storage.get("bannedIps");
+    if (bannedIpsData) {
+      this.bannedIps = new Set(bannedIpsData);
     }
     let tagsData = await this.storage.get("tags");
     if (tagsData) {
@@ -1100,6 +1188,10 @@ export class RoomRegistry {
 
   async saveBanned() {
     await this.storage.put("banned", [...this.banned]);
+  }
+
+  async saveBannedIps() {
+    await this.storage.put("bannedIps", [...this.bannedIps]);
   }
 
   async saveTags() {
@@ -1172,6 +1264,38 @@ export class RoomRegistry {
           headers: {"Content-Type": "application/json"}
         });
         return new Response(JSON.stringify({banned: this.banned.has(name)}), {
+          headers: {"Content-Type": "application/json"}
+        });
+      }
+
+      case "/ip-ban": {
+        let ip = url.searchParams.get("ip");
+        if (!ip) return new Response("请提供IP地址", { status: 400 });
+        this.bannedIps.add(ip);
+        await this.saveBannedIps();
+        return new Response("IP " + ip + " 已被封禁", { status: 200 });
+      }
+
+      case "/ip-unban": {
+        let ip = url.searchParams.get("ip");
+        if (!ip) return new Response("请提供IP地址", { status: 400 });
+        this.bannedIps.delete(ip);
+        await this.saveBannedIps();
+        return new Response("IP " + ip + " 已被解封", { status: 200 });
+      }
+
+      case "/ip-banned-list": {
+        return new Response(JSON.stringify([...this.bannedIps]), {
+          headers: {"Content-Type": "application/json"}
+        });
+      }
+
+      case "/is-ip-banned": {
+        let ip = url.searchParams.get("ip");
+        if (!ip) return new Response(JSON.stringify({banned: false}), {
+          headers: {"Content-Type": "application/json"}
+        });
+        return new Response(JSON.stringify({banned: this.bannedIps.has(ip)}), {
           headers: {"Content-Type": "application/json"}
         });
       }
