@@ -552,6 +552,7 @@ function join() {
   ws.addEventListener("close", event => {
     console.log("WebSocket连接关闭，正在重新连接:", event.code, event.reason);
     if (event.reason === "kicked") {
+      addChatMessage(null, "* 你已被踢出房间");
       return;
     }
     rejoin();
@@ -559,6 +560,7 @@ function join() {
   ws.addEventListener("error", event => {
     console.log("WebSocket错误，正在重新连接:", event);
     if (event.reason === "kicked") {
+      addChatMessage(null, "* 你已被踢出房间");
       return;
     }
     rejoin();
