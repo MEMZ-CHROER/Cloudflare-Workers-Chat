@@ -300,6 +300,13 @@ async function loadGlobalUsers() {
       tagMap = await tr.json();
     } catch (e) { /* 忽略 */ }
 
+    // 获取用户IP
+    let userIpMap = {};
+    try {
+      let ipr = await fetch("/api/admin/user-ips?key=" + encodeURIComponent(adminKey));
+      userIpMap = await ipr.json();
+    } catch (e) { /* 忽略 */ }
+
     let entries = Object.entries(userRooms);
     if (entries.length === 0) {
       container.innerHTML = '<div style="color:#888;padding:8px 0">暂无在线用户</div>';
@@ -312,6 +319,8 @@ async function loadGlobalUsers() {
       let tagText = userTag.tag || '';
       let tagColor = userTag.color || '';
       let tagStyle = tagColor && TAG_COLORS[tagColor] ? 'style="background:' + TAG_COLORS[tagColor] + '"' : '';
+      let userIp = userIpMap[user] || '';
+      let ipHtml = userIp ? ' <span style="color:#999;font-size:85%">(' + escapeHtml(userIp) + ')</span>' : '';
       let tagHtml = tagText
         ? '<span class="tag-badge" ' + tagStyle + '>' + escapeHtml(tagText) + '</span>'
             + '<button class="tag-remove-btn" onclick="removeTag(\'' + user.replace(/'/g, "\\'") + '\')">✕</button>'
@@ -329,7 +338,7 @@ async function loadGlobalUsers() {
             + '</select>'
             + '<button class="tag-set-btn" onclick="setTag(this, \'' + user.replace(/'/g, "\\'") + '\')">设置</button>';
       html += '<div class="global-user-item">' +
-        '<span class="name">' + escapeHtml(user) + tagHtml + '</span>' +
+        '<span class="name">' + escapeHtml(user) + ipHtml + tagHtml + '</span>' +
         '<span class="rooms">房间: ' + rooms.map(r => '#' + r).join(', ') + '</span>' +
         '<span>' +
         '<button class="kick-btn" onclick="globalKick(\'' + user.replace(/'/g, "\\'") + '\')">全局踢出</button>' +
@@ -490,6 +499,13 @@ async function loadHistoryUsers() {
       bannedList = await br.json();
     } catch (e) { /* 忽略 */ }
 
+    // 获取用户IP
+    let userIpMap = {};
+    try {
+      let ipr = await fetch("/api/admin/user-ips?key=" + encodeURIComponent(adminKey));
+      userIpMap = await ipr.json();
+    } catch (e) { /* 忽略 */ }
+
     if (!Array.isArray(allUsers) || allUsers.length === 0) {
       container.innerHTML = '<div style="color:#888;padding:8px 0">暂无历史用户</div>';
       return;
@@ -505,6 +521,8 @@ async function loadHistoryUsers() {
       let tagText = userTag.tag || '';
       let tagColor = userTag.color || '';
       let tagStyle = tagColor && TAG_COLORS[tagColor] ? 'style="background:' + TAG_COLORS[tagColor] + '"' : '';
+      let userIp = userIpMap[user] || '';
+      let ipHtml = userIp ? ' <span style="color:#999;font-size:85%">(' + escapeHtml(userIp) + ')</span>' : '';
       let tagHtml = tagText
         ? '<span class="tag-badge" ' + tagStyle + '>' + escapeHtml(tagText) + '</span>'
             + '<button class="tag-remove-btn" onclick="removeTag(\'' + user.replace(/'/g, "\\'") + '\')">✕</button>'
@@ -524,7 +542,7 @@ async function loadHistoryUsers() {
       let isBanned = bannedList.includes(user);
 
       html += '<div class="history-user-item">' +
-        '<span><span class="name">' + escapeHtml(user) + '</span>' + tagHtml + ' ' + statusHtml + '</span>' +
+        '<span><span class="name">' + escapeHtml(user) + ipHtml + '</span>' + tagHtml + ' ' + statusHtml + '</span>' +
         '<span class="actions">';
       if (!isOnline) {
         html += '<button class="btn-danger" onclick="globalKick(\'' + user.replace(/'/g, "\\'") + '\')">踢出</button>';
