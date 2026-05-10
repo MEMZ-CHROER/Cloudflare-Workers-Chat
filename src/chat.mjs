@@ -395,6 +395,20 @@ async function handleApiRequest(path, request, env) {
           }
         }
 
+        case "user-ips": {
+          try {
+            let registryId = env.registry.idFromName("global");
+            let registryStub = env.registry.get(registryId);
+            let response = await registryStub.fetch(new URL("https://dummy-url/user-ips"));
+            let data = await response.json();
+            return new Response(JSON.stringify(data), {
+              status: 200, headers: {"Content-Type": "application/json"}
+            });
+          } catch (error) {
+            return new Response("获取用户IP失败: " + error.message, { status: 500 });
+          }
+        }
+
         case "ban": {
           // ban/add, ban/remove, ban/list
           const action = path[2]; // add, remove, list
@@ -914,7 +928,7 @@ export class ChatRoom {
         try {
           let registryId = this.env.registry.idFromName("global");
           let stub = this.env.registry.get(registryId);
-          await stub.fetch("https://dummy-url/user-seen?name=" + encodeURIComponent(session.name));
+          await stub.fetch("https://dummy-url/user-seen?name=" + encodeURIComponent(session.name) + "&ip=" + encodeURIComponent(session.ip));
         } catch (e) { /* 尽力而为 */ }
 
         // 发送所有排队消息
@@ -1156,6 +1170,7 @@ export class RoomRegistry {
     this.bannedIps = new Set(); // 被封禁的IP
     this.tags = new Map(); // username -> tag 字符串
     this.knownUsers = new Set(); // 所有历史在线用户名
+    this.userIps = new Map(); // username -> 最近一次IP
     this.load();
   }
 
@@ -1180,6 +1195,10 @@ export class RoomRegistry {
     if (knownUsersData) {
       this.knownUsers = new Set(knownUsersData);
     }
+    let userIpsData = await this.storage.get("userIps");
+    if (userIpsData) {
+      this.userIps = new Map(userIpsData);
+    }
   }
 
   async save() {
@@ -1200,6 +1219,10 @@ export class RoomRegistry {
 
   async saveKnownUsers() {
     await this.storage.put("knownUsers", [...this.knownUsers]);
+  }
+
+  async saveUserIps() {
+    await this.storage.put("userIps", [...this.userIps]);
   }
 
   async fetch(request) {
@@ -1345,12 +1368,27 @@ export class RoomRegistry {
 
       case "/user-seen": {
         let name = url.searchParams.get("name");
+        let ip = url.searchParams.get("ip") || "";
         if (!name) return new Response("请提供用户名", { status: 400 });
         if (!this.knownUsers.has(name)) {
           this.knownUsers.add(name);
           await this.saveKnownUsers();
         }
+        if (ip) {
+          this.userIps.set(name, ip);
+          await this.saveUserIps();
+        }
         return new Response("ok", { status: 200 });
+      }
+
+      case "/user-ips": {
+        let result = {};
+        for (let [name, ip] of this.userIps) {
+          result[name] = ip;
+        }
+        return new Response(JSON.stringify(result), {
+          headers: {"Content-Type": "application/json"}
+        });
       }
 
       case "/known-users": {
