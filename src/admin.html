@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>管理后台</title>
+<style>
+* { box-sizing: border-box; }
+body { font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 16px; background: #f5f5f5; color: #333; }
+
+#login-form {
+  max-width: 360px;
+  margin: 80px auto;
+  background: #fff;
+  padding: 32px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  text-align: center;
+}
+#login-form h1 { margin-top: 0; font-size: 150%; }
+#login-form input {
+  width: 100%;
+  padding: 10px;
+  font-size: 16px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  margin-bottom: 12px;
+  outline: none;
+}
+#login-form input:focus { border-color: #666; }
+#login-form button {
+  width: 100%;
+  padding: 10px;
+  font-size: 16px;
+  background: #4a90d9;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+#login-form button:hover { background: #357abd; }
+#login-error { color: #c00; margin-top: 8px; display: none; }
+
+#admin-panel { display: none; max-width: 800px; margin: 0 auto; }
+#admin-panel h1 { font-size: 150%; margin-bottom: 16px; }
+#admin-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+#admin-header button { padding: 6px 16px; border: 1px solid #ccc; background: #fff; border-radius: 4px; cursor: pointer; }
+#admin-header button:hover { background: #eee; }
+
+.room-card {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+.room-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  cursor: pointer;
+  user-select: none;
+}
+.room-header:hover { background: #fafafa; }
+.room-header .room-name { font-weight: bold; font-size: 110%; }
+.room-header .room-meta { color: #888; font-size: 90%; }
+.room-header .arrow { color: #aaa; transition: transform .2s; }
+.room-header .arrow.open { transform: rotate(90deg); }
+
+.room-detail { display: none; border-top: 1px solid #eee; padding: 12px 16px; }
+.room-detail.open { display: block; }
+.room-actions { margin-bottom: 12px; }
+.room-actions button {
+  padding: 6px 14px; border: 1px solid #ccc; background: #fff;
+  border-radius: 4px; cursor: pointer; font-size: 90%; margin-right: 8px;
+}
+.room-actions button:hover { background: #eee; }
+.room-actions .btn-danger { border-color: #e88; color: #c00; }
+.room-actions .btn-danger:hover { background: #fee; }
+
+.user-list { margin-bottom: 12px; }
+.user-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 0; border-bottom: 1px solid #f0f0f0;
+}
+.user-item:last-child { border-bottom: none; }
+.user-item .name { font-weight: bold; }
+.user-item button {
+  padding: 4px 10px; border: 1px solid #ccc; background: #fff;
+  border-radius: 4px; cursor: pointer; font-size: 85%; margin-left: 6px;
+}
+.user-item button:hover { background: #eee; }
+.user-item .kick-btn { border-color: #e88; color: #c00; }
+.user-item .kick-btn:hover { background: #fee; }
+
+.blacklist-section { margin-top: 8px; padding-top: 8px; border-top: 1px solid #eee; }
+.blacklist-section h4 { margin: 0 0 8px 0; font-size: 90%; color: #888; }
+.blacklist-item { display: inline-block; margin: 0 8px 8px 0; }
+.blacklist-item button {
+  padding: 2px 8px; border: 1px solid #ccc; background: #fff;
+  border-radius: 4px; cursor: pointer; font-size: 85%;
+}
+
+#global-users-section { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 16px; padding: 16px; }
+#global-users-section h2 { font-size: 110%; margin: 0 0 12px 0; }
+.global-user-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
+.global-user-item:last-child { border-bottom: none; }
+.global-user-item .name { font-weight: bold; min-width: 100px; }
+.global-user-item .rooms { color: #888; font-size: 90%; flex: 1; margin: 0 12px; }
+.global-user-item .kick-btn { padding: 4px 10px; border: 1px solid #e88; color: #c00; background: #fff; border-radius: 4px; cursor: pointer; font-size: 85%; white-space: nowrap; }
+.global-user-item .kick-btn:hover { background: #fee; }
+.global-user-item .ban-btn { padding: 4px 10px; border: 1px solid #e88; color: #c00; background: #fff; border-radius: 4px; cursor: pointer; font-size: 85%; white-space: nowrap; margin-left: 6px; }
+.global-user-item .ban-btn:hover { background: #fee; }
+.tag-badge { display: inline-block; font-size: 80%; font-weight: bold; color: #fff; padding: 0 5px; border-radius: 3px; margin-left: 4px; }
+.tag-color-select { width: 70px; padding: 2px 4px; font-size: 80%; border: 1px solid #ccc; border-radius: 3px; margin-left: 4px; vertical-align: middle; }
+.tag-input { width: 50px; padding: 2px 4px; font-size: 85%; border: 1px solid #ccc; border-radius: 3px; margin-left: 4px; }
+.tag-set-btn { padding: 4px 6px; border: 1px solid #ccc; background: #fff; border-radius: 4px; cursor: pointer; font-size: 80%; margin-left: 4px; }
+.tag-set-btn:hover { background: #eee; }
+.tag-remove-btn { padding: 4px 6px; border: 1px solid #e88; color: #c00; background: #fff; border-radius: 4px; cursor: pointer; font-size: 80%; margin-left: 4px; }
+.tag-remove-btn:hover { background: #fee; }
+
+#banned-users-section { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 16px; padding: 16px; }
+#banned-users-section h2 { font-size: 110%; margin: 0 0 12px 0; }
+.banned-user-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
+.banned-user-item:last-child { border-bottom: none; }
+.banned-user-item .name { font-weight: bold; }
+.banned-user-item .unban-btn { padding: 4px 10px; border: 1px solid #ccc; background: #fff; border-radius: 4px; cursor: pointer; font-size: 85%; }
+.banned-user-item .unban-btn:hover { background: #eee; }
+
+#history-users-section { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 16px; padding: 16px; }
+#history-users-section h2 { font-size: 110%; margin: 0 0 12px 0; }
+#history-users-section .summary { color: #888; font-size: 90%; margin-bottom: 12px; }
+.history-user-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px solid #f0f0f0; }
+.history-user-item:last-child { border-bottom: none; }
+.history-user-item .name { font-weight: bold; }
+.history-user-item .online { color: #090; font-size: 80%; margin-left: 6px; }
+.history-user-item .offline { color: #999; font-size: 80%; margin-left: 6px; }
+.history-user-item .actions button { padding: 2px 8px; border: 1px solid #ccc; background: #fff; border-radius: 3px; cursor: pointer; font-size: 80%; margin-left: 4px; }
+.history-user-item .actions button:hover { background: #eee; }
+.history-user-item .actions .btn-danger { border-color: #e88; color: #c00; }
+.history-user-item .actions .btn-danger:hover { background: #fee; }
+
+#loading { text-align: center; color: #888; padding: 40px; }
+</style>
+</head>
+<body>
+
+<div id="login-form">
+  <h1>管理后台</h1>
+  <p style="color:#888;font-size:90%;margin-bottom:16px">请输入管理密钥登录</p>
+  <input type="password" id="admin-key" placeholder="管理密钥" autofocus>
+  <button id="login-btn">登录</button>
+  <div id="login-error">密钥错误，请重试</div>
+</div>
+
+<div id="admin-panel">
+  <div id="admin-header">
+    <h1>管理后台</h1>
+    <button id="logout-btn">退出登录</button>
+  </div>
+  <div id="room-list-container">
+    <div id="loading">加载中...</div>
+  </div>
+  <div id="global-users-section">
+    <h2>全局在线用户</h2>
+    <div id="global-users-list">加载中...</div>
+  </div>
+  <div id="banned-users-section">
+    <h2>被封禁用户</h2>
+    <div id="banned-users-list">加载中...</div>
+  </div>
+  <div id="history-users-section">
+    <h2>历史用户</h2>
+    <div class="summary">所有曾加入过聊天室的用户</div>
+    <div id="history-users-list">加载中...</div>
+  </div>
+</div>
+
+<script>
+let adminKey = localStorage.getItem("admin_key") || "";
+let refreshInterval = null;
+
+if (adminKey) {
+  document.querySelector("#login-form").style.display = "none";
+  document.querySelector("#admin-panel").style.display = "block";
+  loadRooms();
+  loadGlobalUsers();
+  loadBannedList();
+  loadHistoryUsers();
+  startAutoRefresh();
+}
+
+document.querySelector("#login-btn").addEventListener("click", () => {
+  adminKey = document.querySelector("#admin-key").value;
+  if (!adminKey) return;
+  // 验证密钥（通过调用一个需要密钥的 API 来测试）
+  fetch("/api/admin/clear-rate-limits?key=" + encodeURIComponent(adminKey) + "&ip=0.0.0.0")
+    .then(r => {
+      if (r.status === 401) throw new Error("密钥错误");
+      localStorage.setItem("admin_key", adminKey);
+      document.querySelector("#login-form").style.display = "none";
+      document.querySelector("#admin-panel").style.display = "block";
+      loadRooms();
+      loadGlobalUsers();
+      loadBannedList();
+      loadHistoryUsers();
+      startAutoRefresh();
+    })
+    .catch(e => {
+      document.querySelector("#login-error").style.display = "block";
+    });
+});
+
+document.querySelector("#admin-key").addEventListener("keydown", e => {
+  if (e.key === "Enter") document.querySelector("#login-btn").click();
+});
+
+document.querySelector("#logout-btn").addEventListener("click", () => {
+  stopAutoRefresh();
+  localStorage.removeItem("admin_key");
+  adminKey = "";
+  document.querySelector("#admin-panel").style.display = "none";
+  document.querySelector("#login-form").style.display = "block";
+  document.querySelector("#admin-key").value = "";
+  document.querySelector("#admin-key").focus();
+});
+
+async function loadRooms() {
+  let container = document.querySelector("#room-list-container");
+  container.innerHTML = '<div id="loading">加载中...</div>';
+  try {
+    let r = await fetch("/api/rooms/list");
+    let rooms = await r.json();
+    container.innerHTML = "";
+    let entries = Object.entries(rooms);
+    if (entries.length === 0) {
+      container.innerHTML = '<div id="loading">暂无房间</div>';
+      return;
+    }
+    entries.forEach(([name, count]) => {
+      let card = document.createElement("div");
+      card.className = "room-card";
+      card.dataset.room = name;
+      card.innerHTML =
+        '<div class="room-header">' +
+          '<span class="room-name">#' + name + '</span>' +
+          '<span><span class="room-meta">&#128101; ' + count + ' 在线</span><span class="arrow">&#9654;</span></span>' +
+        '</div>' +
+        '<div class="room-detail"></div>';
+      card.querySelector(".room-header").addEventListener("click", () => toggleRoom(card, name));
+      container.appendChild(card);
+    });
+  } catch (e) {
+    container.innerHTML = '<div id="loading">加载失败: ' + e.message + '</div>';
+  }
+}
+
+async function loadGlobalUsers() {
+  let container = document.querySelector("#global-users-list");
+  try {
+    let r = await fetch("/api/admin/all-users?key=" + encodeURIComponent(adminKey));
+    let data = await r.json();
+    // data 格式: { roomName: [user1, user2, ...], ... }
+
+    // 构建用户 -> 房间列表的映射
+    let userRooms = {};
+    for (let [room, users] of Object.entries(data)) {
+      users.forEach(u => {
+        if (!userRooms[u]) userRooms[u] = [];
+        userRooms[u].push(room);
+      });
+    }
+
+    // 获取标签列表
+    let tagMap = {};
+    try {
+      let tr = await fetch("/api/admin/tag/list?key=" + encodeURIComponent(adminKey));
+      tagMap = await tr.json();
+    } catch (e) { /* 忽略 */ }
+
+    let entries = Object.entries(userRooms);
+    if (entries.length === 0) {
+      container.innerHTML = '<div style="color:#888;padding:8px 0">暂无在线用户</div>';
+      return;
+    }
+
+    let html = '';
+    entries.forEach(([user, rooms]) => {
+      let td = tagMap[user] || null;
+      let tagText = td ? (typeof td === 'string' ? td : td.tag || '') : '';
+      let tagColor = td ? (typeof td === 'object' ? (td.color || '') : '') : '';
+      let tagStyle = tagColor ? 'background:' + tagColor : 'background:#e68a2e';
+      let tagHtml = tagText
+        ? '<span class="tag-badge" style="' + tagStyle + '">' + escapeHtml(tagText) + '</span>'
+            + '<button class="tag-remove-btn" onclick="removeTag(\' + user.replace(/'/g, "\\'") + \')">✕</button>'
+        : '<input class="tag-input" id="tag-input-' + user.replace(/[^a-zA-Z0-9_-]/g, '_') + '" placeholder="标签" maxlength="10">'
+            + '<select class="tag-color-select" id="tag-color-' + user.replace(/[^a-zA-Z0-9_-]/g, '_') + '"><option value="">默认</option><option value="#e53935">红</option><option value="#1e88e5">蓝</option><option value="#43a047">绿</option><option value="#8e24aa">紫</option><option value="#d81b60">粉</option><option value="#00acc1">青</option><option value="#757575">灰</option></select>'
+            + '<button class="tag-set-btn" onclick="setTag(\' + user.replace(/'/g, "\\'") + \')">设置</button>';
+      html += '<div class="global-user-item">' +
+        '<span class="name">' + escapeHtml(user) + tagHtml + '</span>' +
+        '<span class="rooms">房间: ' + rooms.map(r => '#' + r).join(', ') + '</span>' +
+        '<span>' +
+        '<button class="kick-btn" onclick="globalKick(\'' + user.replace(/'/g, "\\'") + '\')">全局踢出</button>' +
+        '<button class="ban-btn" onclick="banUser(\'' + user.replace(/'/g, "\\'") + '\')">封禁</button>' +
+        '</span>' +
+        '</div>';
+    });
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = '<div style="color:#c00;padding:8px 0">加载失败: ' + e.message + '</div>';
+  }
+}
+
+async function globalKick(user) {
+  if (!confirm("确定将 " + user + " 从所有房间踢出吗？")) return;
+  try {
+    let r = await fetch("/api/admin/global-kick?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(user));
+    let data = await r.json();
+    alert("已从 " + data.kickedFrom.length + " 个房间踢出 " + user);
+    loadGlobalUsers();
+    loadRooms();
+  } catch (e) {
+    alert("操作失败");
+  }
+}
+
+async function banUser(user) {
+  if (!confirm("确定封禁 " + user + " 吗？封禁后该用户无法加入任何聊天室。")) return;
+  try {
+    // 先全局踢出，再封禁
+    await fetch("/api/admin/global-kick?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(user));
+    let r = await fetch("/api/admin/ban/add?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(user));
+    let text = await r.text();
+    alert(text);
+    loadBannedList();
+    loadGlobalUsers();
+    loadRooms();
+  } catch (e) {
+    alert("操作失败");
+  }
+}
+
+async function unbanUser(user) {
+  if (!confirm("确定解封 " + user + " 吗？")) return;
+  try {
+    let r = await fetch("/api/admin/ban/remove?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(user));
+    let text = await r.text();
+    alert(text);
+    loadBannedList();
+  } catch (e) {
+    alert("操作失败");
+  }
+}
+
+async function loadBannedList() {
+  let container = document.querySelector("#banned-users-list");
+  try {
+    let r = await fetch("/api/admin/ban/list?key=" + encodeURIComponent(adminKey));
+    let banned = await r.json();
+    if (!Array.isArray(banned) || banned.length === 0) {
+      container.innerHTML = '<div style="color:#888;padding:8px 0">暂无被封禁用户</div>';
+      return;
+    }
+    let html = '';
+    banned.forEach(user => {
+      html += '<div class="banned-user-item">' +
+        '<span class="name">' + escapeHtml(user) + '</span>' +
+        '<button class="unban-btn" onclick="unbanUser(\'' + user.replace(/'/g, "\\'") + '\')">解封</button>' +
+        '</div>';
+    });
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = '<div style="color:#c00;padding:8px 0">加载失败: ' + e.message + '</div>';
+  }
+}
+
+async function loadHistoryUsers() {
+  let container = document.querySelector("#history-users-list");
+  try {
+    let [historyRes, onlineRes] = await Promise.all([
+      fetch("/api/admin/users/history?key=" + encodeURIComponent(adminKey)),
+      fetch("/api/admin/all-users?key=" + encodeURIComponent(adminKey))
+    ]);
+    let allUsers = await historyRes.json();
+    let onlineData = await onlineRes.json();
+
+    // 构建在线用户集合
+    let onlineSet = new Set();
+    for (let users of Object.values(onlineData)) {
+      users.forEach(u => onlineSet.add(u));
+    }
+
+    // 获取标签
+    let tagMap = {};
+    try {
+      let tr = await fetch("/api/admin/tag/list?key=" + encodeURIComponent(adminKey));
+      tagMap = await tr.json();
+    } catch (e) { /* 忽略 */ }
+
+    // 获取封禁列表
+    let bannedList = [];
+    try {
+      let br = await fetch("/api/admin/ban/list?key=" + encodeURIComponent(adminKey));
+      bannedList = await br.json();
+    } catch (e) { /* 忽略 */ }
+
+    if (!Array.isArray(allUsers) || allUsers.length === 0) {
+      container.innerHTML = '<div style="color:#888;padding:8px 0">暂无历史用户</div>';
+      return;
+    }
+
+    let html = '';
+    allUsers.forEach(user => {
+      let isOnline = onlineSet.has(user);
+      let statusHtml = isOnline
+        ? '<span class="online">● 在线</span>'
+        : '<span class="offline">○ 离线</span>';
+      let td = tagMap[user] || null;
+      let tagText = td ? (typeof td === 'string' ? td : td.tag || '') : '';
+      let tagColor = td ? (typeof td === 'object' ? (td.color || '') : '') : '';
+      let tagStyle = tagColor ? 'background:' + tagColor : 'background:#e68a2e';
+      let tagHtml = tagText
+        ? '<span class="tag-badge" style="' + tagStyle + '">' + escapeHtml(tagText) + '</span>'
+            + '<button class="tag-remove-btn" onclick="removeTag(\' + user.replace(/'/g, "\\'") + \')">✕</button>'
+        : '<input class="tag-input" id="tag-input-' + user.replace(/[^a-zA-Z0-9_-]/g, '_') + '" placeholder="标签" maxlength="10">'
+            + '<select class="tag-color-select" id="tag-color-' + user.replace(/[^a-zA-Z0-9_-]/g, '_') + '"><option value="">默认</option><option value="#e53935">红</option><option value="#1e88e5">蓝</option><option value="#43a047">绿</option><option value="#8e24aa">紫</option><option value="#d81b60">粉</option><option value="#00acc1">青</option><option value="#757575">灰</option></select>'
+            + '<button class="tag-set-btn" onclick="setTag(\' + user.replace(/'/g, "\\'") + \')">设置</button>';
+      let isBanned = bannedList.includes(user);
+
+      html += '<div class="history-user-item">' +
+        '<span><span class="name">' + escapeHtml(user) + '</span>' + tagHtml + ' ' + statusHtml + '</span>' +
+        '<span class="actions">';
+      if (!isOnline) {
+        html += '<button class="btn-danger" onclick="globalKick(\'' + user.replace(/'/g, "\\'") + '\')">踢出</button>';
+      }
+      if (!isBanned) {
+        html += '<button class="btn-danger" onclick="banUser(\'' + user.replace(/'/g, "\\'") + '\')">封禁</button>';
+      } else {
+        html += '<button onclick="unbanUser(\'' + user.replace(/'/g, "\\'") + '\')">解封</button>';
+      }
+      html += '</span></div>';
+    });
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = '<div style="color:#c00;padding:8px 0">加载失败: ' + e.message + '</div>';
+  }
+}
+
+let expandedRoom = null;
+
+async function setTag(user) {
+  let input = document.querySelector('#tag-input-' + user.replace(/[^a-zA-Z0-9_-]/g, '_'));
+  let colorSelect = document.querySelector('#tag-color-' + user.replace(/[^a-zA-Z0-9_-]/g, '_'));
+  if (!input) return;
+  let tag = input.value.trim();
+  if (!tag) { alert("请输入标签"); return; }
+  let color = colorSelect ? colorSelect.value : '';
+  try {
+    let url = "/api/admin/tag/set?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(user) + "&tag=" + encodeURIComponent(tag);
+    if (color) url += "&color=" + encodeURIComponent(color);
+    let r = await fetch(url);
+    let text = await r.text();
+    alert(text);
+    loadGlobalUsers();
+    loadHistoryUsers();
+  } catch (e) {
+    alert("操作失败");
+  }
+}
+
+async function removeTag(user) {
+  try {
+    let r = await fetch("/api/admin/tag/remove?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(user));
+    let text = await r.text();
+    alert(text);
+    loadGlobalUsers();
+    loadHistoryUsers();
+  } catch (e) {
+    alert("操作失败");
+  }
+}
+
+async function toggleRoom(card, name) {
+  let detail = card.querySelector(".room-detail");
+  let arrow = card.querySelector(".arrow");
+
+  if (detail.classList.contains("open")) {
+    detail.classList.remove("open");
+    arrow.classList.remove("open");
+    if (expandedRoom === name) expandedRoom = null;
+    return;
+  }
+
+  // 收起其他
+  document.querySelectorAll(".room-detail.open").forEach(d => d.classList.remove("open"));
+  document.querySelectorAll(".arrow.open").forEach(a => a.classList.remove("open"));
+
+  detail.classList.add("open");
+  arrow.classList.add("open");
+  expandedRoom = name;
+
+  detail.innerHTML = '<div id="loading">加载中...</div>';
+  await loadRoomDetail(detail, name);
+}
+
+async function loadRoomDetail(detail, name) {
+  try {
+    let [users, blacklist] = await Promise.all([
+      fetch("/api/admin/room-users/" + encodeURIComponent(name) + "?key=" + encodeURIComponent(adminKey)).then(r => r.json()),
+      fetch("/api/admin/blacklist/list/" + encodeURIComponent(name) + "?key=" + encodeURIComponent(adminKey)).then(r => r.json())
+    ]);
+
+    let html = '<div class="room-actions">';
+    html += '<button class="btn-danger" onclick="clearRoom(\'' + name.replace(/'/g, "\\'") + '\')">清空聊天记录</button>';
+    html += '</div>';
+
+    // 用户列表
+    html += '<div class="user-list">';
+    if (users.length === 0) {
+      html += '<div style="color:#888;font-size:90%">暂无在线用户</div>';
+    } else {
+      users.forEach(u => {
+        html += '<div class="user-item">' +
+          '<span class="name">' + escapeHtml(u) + '</span>' +
+          '<span>' +
+            '<button class="kick-btn" onclick="kickUser(\'' + name.replace(/'/g, "\\'") + '\', \'' + u.replace(/'/g, "\\'") + '\')">踢出</button>';
+        if (blacklist.includes(u)) {
+          html += '<button onclick="removeBlacklist(\'' + name.replace(/'/g, "\\'") + '\', \'' + u.replace(/'/g, "\\'") + '\')">移出黑名单</button>';
+        } else {
+          html += '<button onclick="addBlacklist(\'' + name.replace(/'/g, "\\'") + '\', \'' + u.replace(/'/g, "\\'") + '\')">拉黑</button>';
+        }
+        html += '<button class="ban-btn" onclick="banUser(\'' + u.replace(/'/g, "\\'") + '\')">封禁</button>';
+        html += '</span></div>';
+      });
+    }
+    html += '</div>';
+
+    // 黑名单列表
+    if (blacklist.length > 0) {
+      html += '<div class="blacklist-section"><h4>黑名单</h4>';
+      blacklist.forEach(b => {
+        html += '<span class="blacklist-item"><button onclick="removeBlacklist(\'' + name.replace(/'/g, "\\'") + '\', \'' + b.replace(/'/g, "\\'") + '\')">' + escapeHtml(b) + ' ✕</button></span>';
+      });
+      html += '</div>';
+    }
+
+    detail.innerHTML = html;
+  } catch (e) {
+    detail.innerHTML = '<div style="color:#c00">加载失败</div>';
+  }
+}
+
+function escapeHtml(s) {
+  let div = document.createElement("div");
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+async function kickUser(room, user) {
+  if (!confirm("确定踢出 " + user + " 吗？")) return;
+  try {
+    let r = await fetch("/api/admin/kick-user/" + encodeURIComponent(room) + "?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(user));
+    let text = await r.text();
+    alert(text);
+    // 刷新详情
+    let card = document.querySelector('.room-card[data-room="' + room.replace(/"/g, '') + '"]');
+    if (card) {
+      let detail = card.querySelector(".room-detail");
+      await loadRoomDetail(detail, room);
+    }
+  } catch (e) {
+    alert("操作失败");
+  }
+}
+
+async function addBlacklist(room, user) {
+  try {
+    let r = await fetch("/api/admin/blacklist/add/" + encodeURIComponent(room) + "?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(user));
+    let text = await r.text();
+    alert(text);
+    let card = document.querySelector('.room-card[data-room="' + room.replace(/"/g, '') + '"]');
+    if (card) {
+      let detail = card.querySelector(".room-detail");
+      await loadRoomDetail(detail, room);
+    }
+  } catch (e) {
+    alert("操作失败");
+  }
+}
+
+async function removeBlacklist(room, user) {
+  try {
+    let r = await fetch("/api/admin/blacklist/remove/" + encodeURIComponent(room) + "?key=" + encodeURIComponent(adminKey) + "&name=" + encodeURIComponent(user));
+    let text = await r.text();
+    alert(text);
+    let card = document.querySelector('.room-card[data-room="' + room.replace(/"/g, '') + '"]');
+    if (card) {
+      let detail = card.querySelector(".room-detail");
+      await loadRoomDetail(detail, room);
+    }
+  } catch (e) {
+    alert("操作失败");
+  }
+}
+
+async function clearRoom(room) {
+  if (!confirm("确定清空 " + room + " 的聊天记录吗？此操作不可撤销！")) return;
+  try {
+    let r = await fetch("/api/admin/clear-room/" + encodeURIComponent(room) + "?key=" + encodeURIComponent(adminKey));
+    let text = await r.text();
+    alert(text);
+  } catch (e) {
+    alert("操作失败");
+  }
+}
+
+function startAutoRefresh() {
+  if (refreshInterval) clearInterval(refreshInterval);
+  refreshInterval = setInterval(async () => {
+    let expanded = expandedRoom;
+    await loadRooms();
+    // 恢复之前展开的房间
+    if (expanded) {
+      let card = document.querySelector('.room-card[data-room="' + expanded.replace(/"/g, '') + '"]');
+      if (card) {
+        let detail = card.querySelector(".room-detail");
+        let arrow = card.querySelector(".arrow");
+        detail.classList.add("open");
+        arrow.classList.add("open");
+        await loadRoomDetail(detail, expanded);
+      }
+    }
+    loadGlobalUsers();
+    loadBannedList();
+    loadHistoryUsers();
+  }, 10000);
+}
+
+function stopAutoRefresh() {
+  if (refreshInterval) {
+    clearInterval(refreshInterval);
+    refreshInterval = null;
+  }
+}
+</script>
+</body>
+</html>

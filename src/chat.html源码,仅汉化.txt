@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<!--
+  注意：这不是核心功能文件
+  
+  这只是一个UI界面文件，不包含核心逻辑。
+  本演示的核心功能在服务端代码 chat.mjs 中实现。
+
+  注意：此文件由系统工程师编写，非专业前端开发人员，代码风格可能不符合前端最佳实践。
+-->
+
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta charset="UTF-8">
+<!--===================================================================================-->
+<!-- 内联样式避免页面渲染前的额外请求 -->
+<style type="text/css">
+* {
+  box-sizing: border-box;
+}
+body {
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+#chatlog {
+  position: fixed;
+  top: 0;
+  bottom: 32px;
+  left: 0;
+  right: 200px;
+  overflow-y: auto;
+  padding: 8px;
+  overflow-wrap: break-word;
+}
+#chatlog span.username {
+  font-weight: bold;
+}
+#spacer {
+  height: calc(100vh - 32px - 5em);
+}
+
+#roster {
+  font-weight: bold;
+  padding: 8px;
+}
+
+p {
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+p:last-of-type {
+  margin: 0;
+}
+
+#roster {
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 32px;
+  width: 200px;
+  border-left: none;
+}
+
+::-webkit-scrollbar {
+  display: none;
+}
+
+@media(max-width:600px) {
+  #roster { display: none; }
+  #chatlog { right: 0; }
+}
+
+#chat-input {
+  position: fixed;
+  width: 100%;
+  height: 32px;
+  bottom: 0;
+  left: 0;
+  border: none;
+  border-top: none;
+  padding-left: 32px;
+  outline: none;
+}
+#chatroom::before {
+  z-index: 1;
+  display: block;
+  content: ">";
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 32px;
+  height: 32px;
+  line-height: 32px;
+  text-align: center;
+  font-weight: bold;
+  color: #888;
+  -webkit-text-stroke-width: 2px;
+}
+
+#name-form {
+  position: fixed;
+  z-index: 3;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background-color: white;
+}
+
+#name-input {
+  position: fixed;
+  font-size: 200%;
+  top: calc(50% - 1em);
+  left: calc(50% - 8em);
+  width: 16em;
+  height: 2em;
+  margin: 0;
+  text-align: center;
+  border: 1px solid #bbb;
+}
+
+#name-form p {
+  position: fixed;
+  top: calc(50% + 3em);
+  width: 100%;
+  text-align: center;
+}
+
+#room-form {
+  position: fixed;
+  z-index: 2;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background-color: white;
+  font-size: 200%;
+  margin-top: calc(50vh - 3em);
+  text-align: center;
+}
+
+#room-name {
+  font-size: inherit;
+  border: 1px solid #bbb;
+  height: 2em;
+  width: 16em;
+  padding-left: 1em;
+}
+
+#room-form button {
+  font-size: inherit;
+  border: 1px solid #bbb;
+  background-color: #eee;
+  height: 2em;
+}
+
+@media(max-width:660px) {
+  #name-input, #room-form { font-size: 150%; }
+  #name-form p { font-size: 75%; }
+}
+@media(max-width:500px) {
+  #name-input, #room-form { font-size: 100%; }
+  #name-form p { font-size: 50%; }
+}
+
+#go-public {
+  width: 4em;
+}
+#go-private {
+  width: 20em;
+}
+
+</style>
+
+<!--===================================================================================-->
+<!-- 实际的HTML内容，结构非常简单 -->
+
+  </head>
+  <body>
+    <form id="name-form" action="/fake-form-action">
+      <input id="name-input" placeholder="你的名字">
+      <p>此聊天应用完全运行在边缘网络，由<br>
+        <a href="https://blog.cloudflare.com/introducing-workers-durable-objects" target="_blank">Cloudflare Workers Durable Objects</a>提供技术支持</p>
+    </form>
+    <form id="room-form" action="/fake-form-action">
+      <p>输入公共房间名称：</p>
+      <input id="room-name" placeholder="房间名称"><button id="go-public">进入 &raquo;</button>
+      <p>或</p>
+      <button id="go-private">创建私人房间 &raquo;</button>
+    </form>
+    <form id="chatroom" action="/fake-form-action">
+      <div id="chatlog">
+        <div id="spacer"></div>
+      </div>
+      <div id="roster"></div>
+      <input id="chat-input" placeholder="输入消息...">
+    </form>
+  </body>
+
+<!--===================================================================================-->
+<!-- 客户端JavaScript代码 -->
+
+<script type="text/javascript">
+let currentWebSocket = null;
+
+let nameForm = document.querySelector("#name-form");
+let nameInput = document.querySelector("#name-input");
+let roomForm = document.querySelector("#room-form");
+let roomNameInput = document.querySelector("#room-name");
+let goPublicButton = document.querySelector("#go-public");
+let goPrivateButton = document.querySelector("#go-private");
+let chatroom = document.querySelector("#chatroom");
+let chatlog = document.querySelector("#chatlog");
+let chatInput = document.querySelector("#chat-input");
+let roster = document.querySelector("#roster");
+
+// 聊天窗口是否滚动到底部？
+let isAtBottom = true;
+
+let username;
+let roomname;
+
+let hostname = window.location.host;
+if (hostname == "") {
+  // 可能是本地测试HTML文件
+  hostname = "edge-chat-demo.cloudflareworkers.com";
+}
+
+function startNameChooser() {
+  nameForm.addEventListener("submit", event => {
+    event.preventDefault();
+    username = nameInput.value;
+    if (username.length > 0) {
+      startRoomChooser();
+    }
+  });
+
+  nameInput.addEventListener("input", event => {
+    if (event.currentTarget.value.length > 32) {
+      event.currentTarget.value = event.currentTarget.value.slice(0, 32);
+    }
+  });
+
+  nameInput.focus();
+}
+
+function startRoomChooser() {
+  nameForm.remove();
+
+  if (document.location.hash.length > 1) {
+    roomname = document.location.hash.slice(1);
+    startChat();
+    return;
+  }
+
+  roomForm.addEventListener("submit", event => {
+    event.preventDefault();
+    roomname = roomNameInput.value;
+    if (roomname.length > 0) {
+      startChat();
+    }
+  });
+
+  roomNameInput.addEventListener("input", event => {
+    if (event.currentTarget.value.length > 32) {
+      event.currentTarget.value = event.currentTarget.value.slice(0, 32);
+    }
+  });
+
+  goPublicButton.addEventListener("click", event => {
+    roomname = roomNameInput.value;
+    if (roomname.length > 0) {
+      startChat();
+    }
+  });
+
+  goPrivateButton.addEventListener("click", async event => {
+    roomNameInput.disabled = true;
+    goPublicButton.disabled = true;
+    event.currentTarget.disabled = true;
+
+    let response = await fetch("https://" + hostname + "/api/room", {method: "POST"});
+    if (!response.ok) {
+      alert("出现错误");
+      document.location.reload();
+      return;
+    }
+
+    roomname = await response.text();
+    startChat();
+  });
+
+  roomNameInput.focus();
+}
+
+function startChat() {
+  roomForm.remove();
+
+  // 对房间名称进行规范化处理
+  roomname = roomname.replace(/[^a-zA-Z0-9_-]/g, "").replace(/_/g, "-").toLowerCase();
+
+  if (roomname.length > 32 && !roomname.match(/^[0-9a-f]{64}$/)) {
+    addChatMessage("错误", "无效的房间名称。");
+    return;
+  }
+
+  document.location.hash = "#" + roomname;
+
+  chatInput.addEventListener("keydown", event => {
+    if (event.keyCode == 38) {
+      // 上箭头
+      chatlog.scrollBy(0, -50);
+    } else if (event.keyCode == 40) {
+      // 下箭头
+      chatlog.scrollBy(0, 50);
+    } else if (event.keyCode == 33) {
+      // 向上翻页
+      chatlog.scrollBy(0, -chatlog.clientHeight + 50);
+    } else if (event.keyCode == 34) {
+      // 向下翻页
+      chatlog.scrollBy(0, chatlog.clientHeight - 50);
+    }
+  });
+
+  chatroom.addEventListener("submit", event => {
+    event.preventDefault();
+
+    if (currentWebSocket) {
+      currentWebSocket.send(JSON.stringify({message: chatInput.value}));
+      chatInput.value = "";
+
+      // 发送消息时自动滚动到底部
+      chatlog.scrollBy(0, 1e8);
+    }
+  });
+
+  chatInput.addEventListener("input", event => {
+    if (event.currentTarget.value.length > 256) {
+      event.currentTarget.value = event.currentTarget.value.slice(0, 256);
+    }
+  });
+
+  chatlog.addEventListener("scroll", event => {
+    isAtBottom = chatlog.scrollTop + chatlog.clientHeight >= chatlog.scrollHeight;
+  });
+
+  chatInput.focus();
+  document.body.addEventListener("click", event => {
+    // 如果用户点击窗口但没有选中任何文本，则将焦点放在聊天输入框
+    if (window.getSelection().toString() == "") {
+      chatInput.focus();
+    }
+  });
+
+  // 检测移动设备键盘的显示/隐藏，并相应调整滚动位置
+  if('visualViewport' in window) {
+    window.visualViewport.addEventListener('resize', function(event) {
+      if (isAtBottom) {
+        chatlog.scrollBy(0, 1e8);
+      }
+    });
+  }
+
+  join();
+}
+
+let lastSeenTimestamp = 0;
+let wroteWelcomeMessages = false;
+
+function join() {
+  // 如果通过wrangler dev运行，使用ws:
+  const wss = document.location.protocol === "http:" ? "ws://" : "wss://";
+  let ws = new WebSocket(wss + hostname + "/api/room/" + roomname + "/websocket");
+  let rejoined = false;
+  let startTime = Date.now();
+
+  let rejoin = async () => {
+    if (!rejoined) {
+      rejoined = true;
+      currentWebSocket = null;
+
+      // 清空在线用户列表
+      while (roster.firstChild) {
+        roster.removeChild(roster.firstChild);
+      }
+
+      // 避免过快重连
+      let timeSinceLastJoin = Date.now() - startTime;
+      if (timeSinceLastJoin < 10000) {
+        // 距离上次连接不足10秒，稍作等待
+        await new Promise(resolve => setTimeout(resolve, 10000 - timeSinceLastJoin));
+      }
+
+      // 现在重新连接！
+      join();
+    }
+  }
+
+  ws.addEventListener("open", event => {
+    currentWebSocket = ws;
+
+    // 发送用户信息
+    ws.send(JSON.stringify({name: username}));
+  });
+
+  ws.addEventListener("message", event => {
+    let data = JSON.parse(event.data);
+
+    if (data.error) {
+      addChatMessage(null, "* 错误: " + data.error);
+    } else if (data.joined) {
+      let p = document.createElement("p");
+      p.innerText = data.joined;
+      roster.appendChild(p);
+    } else if (data.quit) {
+      for (let child of roster.childNodes) {
+        if (child.innerText == data.quit) {
+          roster.removeChild(child);
+          break;
+        }
+      }
+    } else if (data.ready) {
+      // 所有加入前的消息都已传送完毕
+      if (!wroteWelcomeMessages) {
+        wroteWelcomeMessages = true;
+        addChatMessage(null,
+            "* 这是一个使用Cloudflare Workers Durable Objects构建的演示应用。" +
+            "源代码可以在以下地址找到: https://github.com/cloudflare/workers-chat-demo");
+        addChatMessage(null,
+            "* 警告: 聊天室参与者是互联网上的随机用户。" +
+            "名称未经认证；任何人都可以冒充他人。与你聊天的人" +
+            "并非Cloudflare员工。聊天记录会被保存。");
+        if (roomname.length == 64) {
+          addChatMessage(null,
+              "* 这是一个私人房间。你可以通过分享URL邀请他人加入。");
+        } else {
+          addChatMessage(null,
+              "* 欢迎来到 #" + roomname + " 房间！打个招呼吧！");
+        }
+      }
+    } else {
+      // 常规聊天消息
+      if (data.timestamp > lastSeenTimestamp) {
+        addChatMessage(data.name, data.message);
+        lastSeenTimestamp = data.timestamp;
+      }
+    }
+  });
+
+  ws.addEventListener("close", event => {
+    console.log("WebSocket连接关闭，正在重新连接:", event.code, event.reason);
+    rejoin();
+  });
+  ws.addEventListener("error", event => {
+    console.log("WebSocket错误，正在重新连接:", event);
+    rejoin();
+  });
+}
+
+function addChatMessage(name, text) {
+  let p = document.createElement("p");
+  if (name) {
+    let tag = document.createElement("span");
+    tag.className = "username";
+    tag.innerText = name + ": ";
+    p.appendChild(tag);
+  }
+  p.appendChild(document.createTextNode(text));
+
+  // 添加新的聊天行，确保如果聊天记录之前已滚动到底部，
+  // 则保持底部位置，否则不改变滚动位置
+  chatlog.appendChild(p);
+  if (isAtBottom) {
+    chatlog.scrollBy(0, 1e8);
+  }
+}
+
+startNameChooser();
+</script>
+<!--===================================================================================-->
+</html>
