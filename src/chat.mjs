@@ -601,10 +601,9 @@ export class ChatRoom {
     // 调用 Durable Object 存储的 deleteAll() 方法来清空所有数据
     await this.storage.deleteAll();
     console.log(`Durable Object ID: ${this.state.id} - 所有聊天记录已清空。`);
-    // 清空内存中的会话列表（已连接的 WebSocket），虽然它们会在断开后消失
-    // 这里清空主要是为了逻辑清晰，实际会话需要客户端重新连接或发送消息来更新状态
-    this.sessions.clear(); 
     this.lastTimestamp = 0; // 重置时间戳
+    // 通知所有在线用户刷新聊天室
+    this.broadcast({type: "room-cleared"});
   }
 
 
